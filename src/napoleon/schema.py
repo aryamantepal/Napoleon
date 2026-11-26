@@ -3,9 +3,11 @@
 This is the contract between a game backend and every agent. The fake game emits it
 today; the civ6-mcp structured layer will emit the same shape for real Civ VI.
 
-Coordinates are axial hex coordinates ``(q, r)``. Only tiles the player has revealed
-appear in a snapshot, and ``Tile.visible`` says whether the player sees the tile this
-turn (``False`` means it is remembered from an earlier turn, under fog).
+Coordinates are axial hex coordinates ``(q, r)``. ``units`` holds the player's own
+units and any other unit in sight, so check ``Unit.owner``. A ``MoveUnit`` onto an enemy
+unit's tile is an attack. Only tiles the player has revealed appear in a snapshot, and
+``Tile.visible`` says whether the player sees the tile this turn (``False`` means it is
+remembered from an earlier turn, under fog).
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
 
 
 class _Model(BaseModel):
@@ -68,6 +70,7 @@ class City(_Model):
     production_progress: float = 0.0
     production_cost: float | None = None
     is_capital: bool = False
+    hp: int = 100
 
 
 class ResearchState(_Model):
