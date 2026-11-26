@@ -46,8 +46,9 @@ class CivEnv:
         except ValidationError as exc:
             return snap, StepResult(ok=False, error=f"malformed action: {exc.errors()[0]['msg']}")
 
-        if isinstance(parsed, EndTurn) and snap.blockers:
-            reasons = "; ".join(b.message or b.kind for b in snap.blockers)
+        blocking = [b for b in snap.blockers if b.kind != "other"]
+        if isinstance(parsed, EndTurn) and blocking:
+            reasons = "; ".join(b.message or b.kind for b in blocking)
             return snap, StepResult(ok=False, error=f"turn is blocked: {reasons}")
 
         if parsed not in snap.legal_actions:
