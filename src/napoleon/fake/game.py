@@ -8,6 +8,7 @@ progress. Same scenario and seed always give the same game.
 
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass, field
 
@@ -75,6 +76,17 @@ CIVICS: dict[str, tuple[int, tuple[str, ...]]] = {
     "political_philosophy": (55, ("craftsmanship", "early_empire")),
 }
 
+# Combat. A unit attacks by moving onto an enemy unit's tile.
+UNIT_STRENGTH = {"settler": 0, "warrior": 20}
+FORTIFY_BONUS = 6
+CITY_STRENGTH = 15
+MAX_HP = 100
+HEAL_PER_TURN = 10
+BARBARIAN_FIRST_TURN = 8
+BARBARIAN_EVERY = 10
+MAX_BARBARIANS = 2
+RIVAL_EXPANDS_EVERY = 20
+
 MIN_CITY_DISTANCE = 3
 SIGHT = 2
 CITY_NAMES = ("Lutetia", "Massilia", "Lugdunum", "Burdigala", "Tolosa", "Arelate", "Nemausus")
@@ -89,6 +101,7 @@ class _Unit:
     moves_left: int
     fortified: bool = False
     skipped: bool = False
+    hp: int = MAX_HP
 
 
 @dataclass
@@ -103,6 +116,7 @@ class _City:
     production_progress: float = 0.0
     buildings: set[str] = field(default_factory=set)
     is_capital: bool = False
+    hp: int = MAX_HP
 
 
 @dataclass
@@ -146,6 +160,7 @@ class FakeCivGame:
 
     PLAYER = 0
     RIVAL = 1
+    BARBARIANS = 2
 
     def __init__(self, radius: int = 7, max_turns: int = 100) -> None:
         self.radius = radius
@@ -187,19 +202,20 @@ class FakeCivGame:
             for c in sorted(self.revealed, key=lambda c: (c.q, c.r))
         )
         cities = tuple(self._city_view(c) for c in self.cities.values() if c.owner == self.PLAYER)
-        # The rival's city shows only while in sight.
+        # Other players' units show only while in sight.
         units = tuple(
             Unit(
                 id=u.id,
                 owner=u.owner,
                 type=u.type,
                 coord=u.coord,
-                moves_left=u.moves_left,
+                hp=u.hp,
+                moves_left=u.moves_left if u.owner == self.PLAYER else 0,
                 max_moves=UNIT_MOVES[u.type],
                 fortified=u.fortified,
             )
-            for u in self.units.values()
-            if u.owner == self.PLAYER
+            for u in sorted(self.units.values(), key=lambda u: u.id)
+            if u.owner == self.PLAYER or u.coord in visible
         )
         contacts = (
             (Contact(player_id=self.RIVAL, civ="Carthage", score=self.rival_score),)
@@ -381,6 +397,7 @@ class FakeCivGame:
             production_progress=city.production_progress,
             production_cost=cost,
             is_capital=city.is_capital,
+            hp=city.hp,
         )
 
     def _empire_yields(self) -> Yields:
@@ -436,11 +453,16 @@ class FakeCivGame:
     def _legal_actions(self, blockers: tuple[Blocker, ...]) -> tuple[Action, ...]:
         acts: list[Action] = []
         occupied = {u.coord for u in self.units.values()}
+        enemies = {u.coord for u in self.units.values() if u.owner != self.PLAYER}
+        foreign = {c.coord for c in self.cities.values() if c.owner != self.PLAYER}
         for u in sorted(self.units.values(), key=lambda u: u.id):
             if u.owner != self.PLAYER or u.moves_left <= 0:
                 continue
             for n in neighbors(u.coord):
-                if n in self.terrain and self.terrain[n] not in IMPASSABLE and n not in occupied:
+                if n not in self.terrain or self.terrain[n] in IMPASSABLE or n in foreign:
+                    continue
+                attack = n in enemies and UNIT_STRENGTH[u.type] > 0
+                if attack or n not in occupied:
                     acts.append(MoveUnit(unit_id=u.id, to=n))
             acts.append(UnitCommand(unit_id=u.id, command="skip"))
             if u.type == "warrior" and not u.fortified:
@@ -462,6 +484,9 @@ class FakeCivGame:
 
     def _move(self, action: MoveUnit) -> StepResult:
         u = self.units[action.unit_id]
+        target = self._unit_at(action.to)
+        if target is not None and target.owner != u.owner:
+            return StepResult(ok=True, events=tuple(self._attack(u, target)))
         u.coord = action.to
         u.moves_left = max(0, u.moves_left - MOVE_COST.get(self.terrain[action.to], 1))
         u.fortified = False
@@ -471,6 +496,153 @@ class FakeCivGame:
         if self.met_rival and not before:
             events.append("met Carthage")
         return StepResult(ok=True, events=tuple(events))
+
+    def _unit_at(self, c: Coord) -> _Unit | None:
+        return next((u for u in self.units.values() if u.coord == c), None)
+
+    def _city_at(self, c: Coord) -> _City | None:
+        return next((x for x in self.cities.values() if x.coord == c), None)
+
+    def _damage(self, attack: float, defend: float) -> int:
+        """Civ-style damage: about 30 at equal strength, scaled by the difference."""
+        return max(1, round(30 * math.exp((attack - defend) / 25) * self.rng.uniform(0.8, 1.2)))
+
+    def _attack(self, att: _Unit, dfn: _Unit) -> list[str]:
+        """Unit-on-unit fight. The winner moves in if the defender dies."""
+        a = UNIT_STRENGTH[att.type] * (0.5 + att.hp / (2 * MAX_HP))
+        d = UNIT_STRENGTH[dfn.type] + (FORTIFY_BONUS if dfn.fortified else 0)
+        d *= 0.5 + dfn.hp / (2 * MAX_HP)
+        events: list[str] = []
+        att.moves_left = 0
+        att.fortified = False
+        if UNIT_STRENGTH[dfn.type] == 0:
+            del self.units[dfn.id]
+            att.coord = dfn.coord
+            return [f"{self._label(att)} captured {self._label(dfn)}"]
+        dfn.hp -= self._damage(a, d)
+        att.hp -= self._damage(d, a)
+        if dfn.hp <= 0:
+            del self.units[dfn.id]
+            events.append(f"{self._label(att)} destroyed {self._label(dfn)}")
+            if att.hp > 0:
+                att.coord = dfn.coord
+        else:
+            events.append(f"{self._label(att)} attacked {self._label(dfn)} ({dfn.hp} hp left)")
+        if att.hp <= 0:
+            del self.units[att.id]
+            events.append(f"{self._label(att)} died attacking")
+        self._update_sight()
+        return events
+
+    def _city_strength(self, city: _City) -> float:
+        garrison = self._unit_at(city.coord)
+        bonus = UNIT_STRENGTH[garrison.type] / 2 if garrison and garrison.owner == city.owner else 0
+        return CITY_STRENGTH + 2 * city.population + bonus
+
+    def _city_strikes(self) -> list[str]:
+        """Each player city hits one adjacent barbarian, as cities do in Civ."""
+        events: list[str] = []
+        for city in [c for c in self.cities.values() if c.owner == self.PLAYER]:
+            near = [
+                u
+                for u in self.units.values()
+                if u.owner == self.BARBARIANS and distance(u.coord, city.coord) == 1
+            ]
+            if not near:
+                continue
+            b = min(near, key=lambda u: (u.hp, u.id))
+            b.hp -= self._damage(self._city_strength(city), UNIT_STRENGTH[b.type])
+            if b.hp <= 0:
+                del self.units[b.id]
+                events.append(f"{city.name} destroyed {self._label(b)}")
+            else:
+                events.append(f"{city.name} struck {self._label(b)} ({b.hp} hp left)")
+        return events
+
+    def _attack_city(self, att: _Unit, city: _City) -> list[str]:
+        strength = self._city_strength(city)
+        city.hp -= self._damage(UNIT_STRENGTH[att.type], strength)
+        att.hp -= self._damage(strength, UNIT_STRENGTH[att.type])
+        events = [f"{self._label(att)} attacked {city.name}"]
+        if city.hp <= 0:
+            city.population = max(1, city.population - 1)
+            city.production_progress /= 2
+            city.hp = MAX_HP // 2
+            events.append(f"{city.name} was pillaged and shrank to {city.population}")
+        if att.hp <= 0:
+            del self.units[att.id]
+            events.append(f"{self._label(att)} died at {city.name}")
+        return events
+
+    def _label(self, u: _Unit) -> str:
+        who = {self.PLAYER: "", self.RIVAL: "Carthaginian ", self.BARBARIANS: "barbarian "}
+        return f"{who[u.owner]}{u.type} {u.id}"
+
+    def _barbarian_phase(self) -> list[str]:
+        events = self._city_strikes()
+        mine = [c for c in self.cities.values() if c.owner == self.PLAYER]
+        if (
+            mine
+            and sum(u.owner == self.BARBARIANS for u in self.units.values()) < MAX_BARBARIANS
+            and self.turn >= BARBARIAN_FIRST_TURN
+            and (self.turn - BARBARIAN_FIRST_TURN) % BARBARIAN_EVERY == 0
+        ):
+            occupied = {u.coord for u in self.units.values()}
+            spots = [
+                c
+                for c, t in self.terrain.items()
+                if t not in IMPASSABLE
+                and c not in occupied
+                and self._city_at(c) is None
+                and 4 <= min(distance(c, x.coord) for x in mine) <= 5
+            ]
+            if spots:
+                spot = self.rng.choice(sorted(spots, key=lambda c: (c.q, c.r)))
+                b = self._new_unit("warrior", spot, owner=self.BARBARIANS)
+                events.append(f"barbarians appeared ({self._label(b)})")
+        targets = [u.coord for u in self.units.values() if u.owner == self.PLAYER]
+        targets += [c.coord for c in mine]
+        for b in [u for u in self.units.values() if u.owner == self.BARBARIANS]:
+            if not targets:
+                break
+            goal = min(targets, key=lambda t: (distance(b.coord, t), t.q, t.r))
+            if distance(b.coord, goal) == 1:
+                # A city shelters whatever stands in it, so a city tile is fought as a city.
+                city = self._city_at(goal)
+                unit = self._unit_at(goal)
+                if city is not None:
+                    events += self._attack_city(b, city)
+                elif unit is not None:
+                    events += self._attack(b, unit)
+                continue
+            occupied = {u.coord for u in self.units.values()}
+            steps = [
+                n
+                for n in neighbors(b.coord)
+                if n in self.terrain
+                and self.terrain[n] not in IMPASSABLE
+                and n not in occupied
+                and self._city_at(n) is None
+            ]
+            if steps:
+                b.coord = min(steps, key=lambda n: (distance(n, goal), n.q, n.r))
+        return events
+
+    def _rival_phase(self) -> list[str]:
+        if self.turn % RIVAL_EXPANDS_EVERY != 0:
+            return []
+        home = next(c for c in self.cities.values() if c.owner == self.RIVAL and c.is_capital)
+        spots = [
+            c
+            for c in within(home.coord, 4)
+            if c in self.terrain and self._can_found(c) and self._unit_at(c) is None
+        ]
+        if not spots:
+            return []
+        spot = self.rng.choice(sorted(spots, key=lambda c: (c.q, c.r)))
+        self._new_city(self.RIVAL, spot, name=f"Carthage {self.turn // RIVAL_EXPANDS_EVERY + 1}")
+        self.rival_score += 5
+        return ["Carthage founded a new city"] if self.met_rival else []
 
     def _command(self, action: UnitCommand) -> StepResult:
         u = self.units[action.unit_id]
@@ -516,9 +688,15 @@ class FakeCivGame:
         # The rival grows on a fixed schedule so contact scores move.
         if self.turn % 2 == 0:
             self.rival_score += 1
+        events += self._barbarian_phase()
+        events += self._rival_phase()
         for u in self.units.values():
+            if u.fortified or u.moves_left == UNIT_MOVES[u.type]:
+                u.hp = min(MAX_HP, u.hp + HEAL_PER_TURN)
             u.moves_left = UNIT_MOVES[u.type]
             u.skipped = False
+        for city in self.cities.values():
+            city.hp = min(MAX_HP, city.hp + HEAL_PER_TURN)
         self.turn += 1
         self._update_sight()
         done = self._done()
@@ -549,8 +727,8 @@ class FakeCivGame:
                 return f"{city.name} finished {item} but had no room; it waits"
             spot = free[0]
         self._new_unit(item, spot)
-        if item == "settler" and city.population < 2:
-            city.production = None
+        # Like Civ VI, the city asks for new orders after every item.
+        city.production = None
         return f"{city.name} trained {item}"
 
     def _done(self) -> bool:

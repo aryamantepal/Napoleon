@@ -10,7 +10,7 @@ Status: early. Everything below runs without Civ VI, on a small deterministic fa
 
 - `napoleon.schema`: the turn snapshot and the six typed actions, versioned. This is the contract every backend emits.
 - `napoleon.env.CivEnv`: `reset(scenario, seed)`, `observe()`, `step(action)` over any `GameBackend`. Illegal or malformed actions come back as errors and never change the game.
-- `napoleon.fake.FakeCivGame`: a fogged hex map, settlers, cities, production, tech and civic trees, turn blockers and a rival. Scenarios: `default` and `bad_opening`.
+- `napoleon.fake.FakeCivGame`: a fogged hex map, settlers, warriors, cities, production, tech and civic trees, turn blockers, barbarians, simple combat and an expanding rival. Scenarios: `default` and `bad_opening`.
 - `napoleon.recording`: JSONL run files with every step, the agent's reasoning, and a full snapshot per turn.
 - `napoleon.metrics`: score, cities, population and techs over turns, illegal-action rate, and recovery from a bad opening.
 - `napoleon.agents`: `random` and `greedy` sanity agents.
