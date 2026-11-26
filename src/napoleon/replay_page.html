@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Napoleon replay</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6a66; --line: #dddbd4;
+    --accent: #2f5fd0; --bad: #b3261e; --good: #2e7d32;
+    --p0: #2f5fd0; --p1: #c0392b; --p2: #333333; --p63: #333333; --pother: #8e44ad;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --panel: #201f1d; --text: #ecebe6; --muted: #a09e97; --line: #3a3935;
+      --accent: #7aa2ff; --bad: #ff8a80; --good: #81c784;
+      --p0: #7aa2ff; --p1: #ff7b6b; --p2: #d0d0d0; --p63: #d0d0d0; --pother: #c39bd3;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 16px; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; padding: 16px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+  h2 { margin: 0 0 8px; font-size: 14px; color: var(--muted); font-weight: 600; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .controls input[type=range] { flex: 1; min-width: 120px; }
+  button { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line);
+           background: var(--bg); color: var(--text); cursor: pointer; }
+  #map { width: 100%; height: auto; display: block; }
+  #chart { width: 100%; height: 140px; display: block; }
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); margin-top: 8px; }
+  .stats b { color: var(--text); font-weight: 600; }
+  ol { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow: auto; }
+  li { border-top: 1px solid var(--line); padding: 8px 0; }
+  li:first-child { border-top: 0; }
+  .act { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-word; }
+  .why { color: var(--muted); margin-top: 2px; }
+  .err { color: var(--bad); }
+  .ev { font-size: 12px; color: var(--muted); }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Napoleon replay</h1>
+  <p id="sub"></p>
+</header>
+<main>
+  <div style="display:grid; gap:16px; min-width:0">
+    <section>
+      <div class="controls">
+        <button id="play" type="button">Play</button>
+        <button id="prev" type="button" aria-label="Previous turn">&lsaquo;</button>
+        <input id="slider" type="range" min="0" value="0" aria-label="Turn">
+        <button id="next" type="button" aria-label="Next turn">&rsaquo;</button>
+        <span id="turnlabel"></span>
+      </div>
+      <svg id="map" role="img" aria-label="Map for the selected turn"></svg>
+      <div class="legend" id="legend"></div>
+      <div class="stats" id="stats"></div>
+    </section>
+    <section>
+      <h2>Score over turns</h2>
+      <svg id="chart" role="img" aria-label="Score over turns"></svg>
+    </section>
+  </div>
+  <section>
+    <h2 id="stepshead">Steps</h2>
+    <ol id="steps"></ol>
+  </section>
+</main>
+<script>
+const REPLAY = /*REPLAY_DATA*/null;
+const NS = "http://www.w3.org/2000/svg";
+const $ = (id) => document.getElementById(id);
+const el = (tag, attrs = {}, text) => {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const owner = (id) => css(id === null || id === undefined ? "--line" : ["--p0", "--p1", "--p2"][id] || (id === 63 ? "--p63" : "--pother"));
+
+function terrainColor(t) {
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const pick = (light, d) => (dark ? d : light);
+  if (/ocean/.test(t)) return pick("#9cc3e6", "#24415e");
+  if (/coast|lake/.test(t)) return pick("#b9d7ef", "#2f5374");
+  if (/mountain/.test(t)) return pick("#9a958c", "#5b5852");
+  if (/snow/.test(t)) return pick("#f1f1ef", "#8d8f92");
+  if (/tundra/.test(t)) return pick("#c5c9b4", "#626956");
+  if (/desert/.test(t)) return pick("#ead9a6", "#7a6c45");
+  if (/plains/.test(t)) return pick("#d9cf8a", "#6f6a3f");
+  if (/grass/.test(t)) return pick("#a9cf8a", "#4c6b3a");
+  return pick("#cfcac0", "#4a4843");
+}
+
+const SIZE = 14, SQ3 = Math.sqrt(3);
+const px = (q, r) => [SIZE * SQ3 * (q + r / 2), SIZE * 1.5 * r];
+const hexPoints = (cx, cy) => Array.from({ length: 6 }, (_, i) => {
+  const a = Math.PI / 180 * (60 * i - 30);
+  return `${(cx + SIZE * Math.cos(a)).toFixed(1)},${(cy + SIZE * Math.sin(a)).toFixed(1)}`;
+}).join(" ");
+
+const frames = REPLAY.frames;
+const allTiles = frames.flatMap((f) => f.tiles);
+const xs = allTiles.map(([q, r]) => px(q, r)[0]), ys = allTiles.map(([q, r]) => px(q, r)[1]);
+const pad = SIZE * 1.5;
+const box = allTiles.length
+  ? [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) - Math.min(...xs) + 2 * pad, Math.max(...ys) - Math.min(...ys) + 2 * pad]
+  : [0, 0, 100, 100];
+$("map").setAttribute("viewBox", box.join(" "));
+
+function drawMap(f) {
+  const svg = $("map");
+  svg.replaceChildren();
+  for (const [q, r, terrain, own, visible] of f.tiles) {
+    const [x, y] = px(q, r);
+    const g = el("polygon", {
+      points: hexPoints(x, y), fill: terrainColor(terrain),
+      stroke: own === null ? css("--line") : owner(own), "stroke-width": own === null ? 0.5 : 1.6,
+      opacity: visible ? 1 : 0.45,
+    });
+    g.appendChild(el("title", {}, `(${q}, ${r}) ${terrain}${own === null ? "" : `, owner ${own}`}`));
+    svg.appendChild(g);
+  }
+  for (const [id, own, name, q, r, pop] of f.cities) {
+    const [x, y] = px(q, r);
+    svg.appendChild(el("rect", { x: x - 7, y: y - 7, width: 14, height: 14, rx: 2, fill: owner(own), stroke: css("--panel"), "stroke-width": 1.5 }));
+    svg.appendChild(el("text", { x, y: y + 4, "text-anchor": "middle", "font-size": 9, "font-weight": 700, fill: css("--panel") }, pop));
+    svg.appendChild(el("text", { x, y: y - 10, "text-anchor": "middle", "font-size": 9, fill: css("--text") }, name));
+  }
+  for (const [id, own, type, q, r, hp] of f.units) {
+    const [x, y] = px(q, r);
+    const onCity = f.cities.some((c) => c[3] === q && c[4] === r);
+    const cx = onCity ? x + 7 : x, cy = onCity ? y + 7 : y;
+    const c = el("circle", { cx, cy, r: 6, fill: owner(own), stroke: css("--panel"), "stroke-width": 1.2 });
+    c.appendChild(el("title", {}, `${type} ${id} (owner ${own}, ${hp} hp)`));
+    svg.appendChild(c);
+    svg.appendChild(el("text", { x: cx, y: cy + 3, "text-anchor": "middle", "font-size": 8, "font-weight": 700, fill: css("--panel") }, type[0].toUpperCase()));
+  }
+}
+
+function drawChart(turn) {
+  const svg = $("chart");
+  const W = svg.clientWidth || 600, H = 140, P = 28;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.replaceChildren();
+  const s = REPLAY.series.score;
+  if (!s.length) return;
+  const t0 = s[0][0], t1 = s[s.length - 1][0] || 1, vmax = Math.max(1, ...s.map((p) => p[1]));
+  const X = (t) => P + (W - 2 * P) * (t - t0) / Math.max(1, t1 - t0);
+  const Y = (v) => H - P + 8 - (H - 2 * P) * v / vmax;
+  svg.appendChild(el("line", { x1: P, y1: Y(0), x2: W - P, y2: Y(0), stroke: css("--line") }));
+  svg.appendChild(el("text", { x: P - 4, y: Y(vmax) + 4, "text-anchor": "end", "font-size": 10, fill: css("--muted") }, vmax));
+  svg.appendChild(el("text", { x: P - 4, y: Y(0) + 4, "text-anchor": "end", "font-size": 10, fill: css("--muted") }, 0));
+  svg.appendChild(el("text", { x: W - P, y: H - 4, "text-anchor": "end", "font-size": 10, fill: css("--muted") }, `turn ${t1}`));
+  svg.appendChild(el("polyline", { points: s.map(([t, v]) => `${X(t)},${Y(v)}`).join(" "), fill: "none", stroke: css("--accent"), "stroke-width": 2 }));
+  const here = s.find((p) => p[0] === turn);
+  if (here) {
+    svg.appendChild(el("line", { x1: X(turn), y1: P - 8, x2: X(turn), y2: Y(0), stroke: css("--muted"), "stroke-dasharray": "3 3" }));
+    svg.appendChild(el("circle", { cx: X(turn), cy: Y(here[1]), r: 4, fill: css("--accent") }));
+  }
+}
+
+function describe(a) {
+  if (!a || typeof a !== "object") return String(a);
+  switch (a.type) {
+    case "move_unit": return `move unit ${a.unit_id} to (${a.to.q}, ${a.to.r})`;
+    case "unit_command": return `${a.command.replace("_", " ")} with unit ${a.unit_id}`;
+    case "set_production": return `city ${a.city_id} builds ${a.item}`;
+    case "set_research": return `research ${a.tech}`;
+    case "set_civic": return `civic ${a.civic}`;
+    case "end_turn": return "end turn";
+    default: return JSON.stringify(a);
+  }
+}
+
+function drawSteps(turn) {
+  const list = $("steps");
+  list.replaceChildren();
+  const steps = REPLAY.steps.filter((s) => s.turn === turn);
+  $("stepshead").textContent = `Turn ${turn}: ${steps.length} step${steps.length === 1 ? "" : "s"}`;
+  for (const s of steps) {
+    const li = document.createElement("li");
+    const act = document.createElement("div");
+    act.className = "act";
+    act.textContent = `${s.step}. ${describe(s.action)}`;
+    li.appendChild(act);
+    if (s.reasoning) { const w = document.createElement("div"); w.className = "why"; w.textContent = s.reasoning; li.appendChild(w); }
+    if (!s.ok) { const e = document.createElement("div"); e.className = "err"; e.textContent = s.error || "refused"; li.appendChild(e); }
+    for (const ev of s.events) { const e = document.createElement("div"); e.className = "ev"; e.textContent = ev; li.appendChild(e); }
+    list.appendChild(li);
+  }
+}
+
+function show(i) {
+  const f = frames[i];
+  $("slider").value = i;
+  $("turnlabel").textContent = `Turn ${f.turn}`;
+  drawMap(f);
+  drawChart(f.turn);
+  drawSteps(f.turn);
+  const mine = f.cities.filter((c) => c[1] === f.player);
+  $("stats").innerHTML = "";
+  for (const [k, v] of [["Score", f.score], ["Cities", mine.length], ["Pop", mine.reduce((a, c) => a + c[5], 0)], ["Gold", f.gold], ["Tech", f.tech || "none"], ["Civic", f.civic || "none"]]) {
+    const span = document.createElement("span");
+    span.append(`${k} `);
+    const b = document.createElement("b"); b.textContent = v; span.appendChild(b);
+    $("stats").appendChild(span);
+  }
+}
+
+const run = REPLAY.run;
+$("title").textContent = `${run.agent} on ${run.backend} · ${run.scenario}, seed ${run.seed}`;
+$("sub").textContent = `Run ${run.run_id} · ${frames.length} turns · ${REPLAY.steps.length} steps · ended: ${run.ended || "unknown"}`;
+$("legend").innerHTML = `<span><i class="sw" style="background:${css("--p0")}"></i>you</span><span><i class="sw" style="background:${css("--p1")}"></i>rival</span><span><i class="sw" style="background:${css("--p63")}"></i>barbarians</span><span>squares are cities, circles units, faded tiles under fog</span>`;
+$("slider").max = Math.max(0, frames.length - 1);
+$("slider").addEventListener("input", (e) => show(+e.target.value));
+$("prev").addEventListener("click", () => show(Math.max(0, +$("slider").value - 1)));
+$("next").addEventListener("click", () => show(Math.min(frames.length - 1, +$("slider").value + 1)));
+let timer = null;
+$("play").addEventListener("click", () => {
+  if (timer) { clearInterval(timer); timer = null; $("play").textContent = "Play"; return; }
+  $("play").textContent = "Pause";
+  timer = setInterval(() => {
+    const i = +$("slider").value;
+    if (i >= frames.length - 1) { clearInterval(timer); timer = null; $("play").textContent = "Play"; return; }
+    show(i + 1);
+  }, 400);
+});
+addEventListener("resize", () => drawChart(frames[+$("slider").value].turn));
+if (frames.length) show(0);
+</script>
+</body>
+</html>

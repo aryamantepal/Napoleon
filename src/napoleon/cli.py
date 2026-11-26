@@ -39,6 +39,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     metrics = sub.add_parser("metrics", help="print metrics for a recorded run")
     metrics.add_argument("path", type=Path)
+
+    replay = sub.add_parser("replay", help="turn a run file into a replay JSON and HTML page")
+    replay.add_argument("path", type=Path)
+    replay.add_argument("--out", type=Path, default=None, help="default: <run>.replay.json")
+    replay.add_argument("--html", type=Path, default=None, help="default: <run>.replay.html")
+    replay.add_argument("--no-html", action="store_true")
     return parser
 
 
@@ -83,6 +89,16 @@ def main(argv: list[str] | None = None) -> int:
         from napoleon.recording import load_run
 
         print(json.dumps(_summary(compute_metrics(load_run(args.path))), indent=2))
+        return 0
+    if args.command == "replay":
+        from napoleon.replay import write_replay
+
+        stem = args.path.with_suffix("")
+        out = args.out or stem.with_suffix(".replay.json")
+        html = None if args.no_html else (args.html or stem.with_suffix(".replay.html"))
+        replay = write_replay(args.path, out, html)
+        files = {"replay": str(out)} | ({"html": str(html)} if html else {})
+        print(json.dumps({"turns": len(replay["frames"]), "steps": len(replay["steps"])} | files))
         return 0
     build_parser().print_help()
     return 0

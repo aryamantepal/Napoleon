@@ -14,6 +14,7 @@ Status: early. Everything runs on a small deterministic fake game. The civ6-mcp 
 - `napoleon.recording`: JSONL run files with every step, the agent's reasoning, and a full snapshot per turn.
 - `napoleon.metrics`: score, cities, population and techs over turns, illegal-action rate, and recovery from a bad opening.
 - `napoleon.agents`: `random` and `greedy` sanity agents.
+- `napoleon.replay`: compact replay JSON and a self-contained HTML page per run ([format](docs/replay-format.md)).
 - `napoleon.civ6`: `Civ6Backend` over civ6-mcp's game state, a live connection, and a scripted stand-in for tests.
 
 ## Try it
@@ -22,6 +23,7 @@ Status: early. Everything runs on a small deterministic fake game. The civ6-mcp 
 napoleon run --agent greedy --turns 100
 napoleon run --agent random --scenario bad_opening --seed 3
 napoleon metrics runs/fake-greedy-default-0.jsonl
+napoleon replay runs/fake-greedy-default-0.jsonl   # writes .replay.json and .replay.html
 napoleon run --backend civ6-scripted --turns 15
 napoleon run --backend civ6 --save default=napoleon_default   # needs Civ VI open
 ```
