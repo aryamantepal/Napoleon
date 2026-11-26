@@ -16,7 +16,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = "0.3"
 
 
 class _Model(BaseModel):
@@ -101,12 +101,17 @@ class Player(_Model):
 
 
 BlockerKind = Literal[
-    "unit_needs_orders", "city_needs_production", "research_needed", "civic_needed"
+    "unit_needs_orders", "city_needs_production", "research_needed", "civic_needed", "other"
 ]
 
 
 class Blocker(_Model):
-    """Something the player must resolve before the turn can end."""
+    """Something the player must resolve before the turn can end.
+
+    ``other`` covers what real Civ VI can ask for that the six actions can't answer, such
+    as a pantheon or a governor. It never stops ``EndTurn`` in ``CivEnv``; the backend
+    either clears it or refuses the end of turn with a reason.
+    """
 
     kind: BlockerKind
     ref_id: int | None = None

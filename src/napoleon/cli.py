@@ -14,8 +14,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"napoleon {__version__}")
     sub = parser.add_subparsers(dest="command")
 
-    run = sub.add_parser("run", help="play one game on the fake backend and record it")
+    run = sub.add_parser("run", help="play one game and record it")
     run.add_argument("--agent", choices=["random", "greedy"], default="greedy")
+    run.add_argument(
+        "--backend",
+        choices=["fake", "civ6", "civ6-scripted"],
+        default="fake",
+        help="fake game, real Civ VI through civ6-mcp, or civ6-mcp's scripted stand-in",
+    )
+    run.add_argument(
+        "--save",
+        action="append",
+        default=[],
+        metavar="SCENARIO=SAVE",
+        help="civ6 only: the save to load for a scenario (repeatable)",
+    )
+    run.add_argument("--port", type=int, default=4318, help="civ6 only: FireTuner port")
     run.add_argument("--scenario", default="default")
     run.add_argument("--seed", type=int, default=0)
     run.add_argument("--turns", type=int, default=100)
@@ -36,10 +50,31 @@ def main(argv: list[str] | None = None) -> int:
         from napoleon.fake import FakeCivGame
         from napoleon.runner import run_game
 
-        out = args.out or Path("runs") / f"{args.agent}-{args.scenario}-{args.seed}.jsonl"
-        env = CivEnv(FakeCivGame(max_turns=args.turns))
+        name = f"{args.backend}-{args.agent}-{args.scenario}-{args.seed}.jsonl"
+        out = args.out or Path("runs") / name
+        if args.backend == "fake":
+            backend = FakeCivGame(max_turns=args.turns)
+        else:
+            from napoleon.civ6 import Civ6Backend
+
+            saves = dict(s.split("=", 1) for s in args.save)
+            if args.backend == "civ6":
+                from napoleon.civ6.live import connect
+
+                backend = connect(saves, port=args.port, max_turns=args.turns)
+            else:
+                from napoleon.civ6.scripted import ScriptedSource
+
+                saves = saves or {args.scenario: "napoleon_default"}
+                backend = Civ6Backend(ScriptedSource(), saves, max_turns=args.turns)
+        env = CivEnv(backend)
         m = run_game(
-            env, AGENTS[args.agent](), out, backend="fake", scenario=args.scenario, seed=args.seed
+            env,
+            AGENTS[args.agent](),
+            out,
+            backend=args.backend,
+            scenario=args.scenario,
+            seed=args.seed,
         )
         print(json.dumps(_summary(m) | {"run_file": str(out)}, indent=2))
         return 0
