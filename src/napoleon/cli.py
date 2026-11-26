@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 from napoleon import __version__
 
@@ -10,12 +12,58 @@ from napoleon import __version__
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="napoleon", description=__doc__)
     parser.add_argument("--version", action="version", version=f"napoleon {__version__}")
+    sub = parser.add_subparsers(dest="command")
+
+    run = sub.add_parser("run", help="play one game on the fake backend and record it")
+    run.add_argument("--agent", choices=["random", "greedy"], default="greedy")
+    run.add_argument("--scenario", default="default")
+    run.add_argument("--seed", type=int, default=0)
+    run.add_argument("--turns", type=int, default=100)
+    run.add_argument(
+        "--out", type=Path, default=None, help="run file (default runs/<agent>-<seed>.jsonl)"
+    )
+
+    metrics = sub.add_parser("metrics", help="print metrics for a recorded run")
+    metrics.add_argument("path", type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    build_parser().parse_args(argv)
+    args = build_parser().parse_args(argv)
+    if args.command == "run":
+        from napoleon.agents import AGENTS
+        from napoleon.env import CivEnv
+        from napoleon.fake import FakeCivGame
+        from napoleon.runner import run_game
+
+        out = args.out or Path("runs") / f"{args.agent}-{args.scenario}-{args.seed}.jsonl"
+        env = CivEnv(FakeCivGame(max_turns=args.turns))
+        m = run_game(
+            env, AGENTS[args.agent](), out, backend="fake", scenario=args.scenario, seed=args.seed
+        )
+        print(json.dumps(_summary(m) | {"run_file": str(out)}, indent=2))
+        return 0
+    if args.command == "metrics":
+        from napoleon.metrics import compute_metrics
+        from napoleon.recording import load_run
+
+        print(json.dumps(_summary(compute_metrics(load_run(args.path))), indent=2))
+        return 0
+    build_parser().print_help()
     return 0
+
+
+def _summary(m) -> dict:
+    return {
+        "turns_played": m.turns_played,
+        "steps": m.steps,
+        "failed_steps": m.failed_steps,
+        "final_score": m.final_score,
+        "cities": int(m.cities_by_turn[-1][1]),
+        "population": int(m.population_by_turn[-1][1]),
+        "techs": int(m.techs_by_turn[-1][1]),
+        "victory_progress": m.final_victory_progress,
+    }
 
 
 if __name__ == "__main__":
