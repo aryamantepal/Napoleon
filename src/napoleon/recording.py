@@ -61,6 +61,7 @@ class RunFooter(_Model):
     final_snapshot: Snapshot
     steps: int
     reason: str = "done"
+    overhead_usage: Usage | None = None  # LLM use outside any step, such as a reflection
 
 
 def snapshot_hash(snap: Snapshot) -> str:
@@ -108,10 +109,19 @@ class Recorder:
         self._step += 1
         return rec
 
-    def close(self, final: Snapshot, reason: str = "done") -> None:
+    def close(
+        self, final: Snapshot, reason: str = "done", overhead_usage: Usage | None = None
+    ) -> None:
         if self._fh.closed:
             return
-        self._write(RunFooter(final_snapshot=final, steps=self._step, reason=reason))
+        self._write(
+            RunFooter(
+                final_snapshot=final,
+                steps=self._step,
+                reason=reason,
+                overhead_usage=overhead_usage,
+            )
+        )
         self._fh.close()
 
     def __enter__(self) -> Recorder:

@@ -30,6 +30,7 @@ class DirectAgent:
         self._client = client
         self.max_retries = max_retries
         self.max_tokens = max_tokens
+        self.lessons = ""  # extra system text, set by agents that learn across games
 
     @property
     def client(self) -> LLMClient:
@@ -49,7 +50,7 @@ class DirectAgent:
 
     def act(self, snapshot: Snapshot) -> Decision:
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPT + self.lessons},
             {"role": "user", "content": render_snapshot(snapshot)},
         ]
         usage = Usage()

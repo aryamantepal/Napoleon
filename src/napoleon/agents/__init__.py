@@ -5,16 +5,18 @@ from napoleon.agents.direct import DirectAgent
 from napoleon.agents.greedy import GreedyAgent
 from napoleon.agents.random_agent import RandomAgent
 from napoleon.agents.react import ReActAgent
+from napoleon.agents.reflexion import ReflexionAgent
 
 AGENTS: dict[str, type] = {
     "random": RandomAgent,
     "greedy": GreedyAgent,
     "direct": DirectAgent,
     "react": ReActAgent,
+    "reflexion": ReflexionAgent,
 }
 
 # Agents built around an LLM client; the rest take no arguments.
-LLM_AGENTS = frozenset({"direct", "react"})
+LLM_AGENTS = frozenset({"direct", "react", "reflexion"})
 
 __all__ = [
     "AGENTS",
@@ -25,4 +27,5 @@ __all__ = [
     "GreedyAgent",
     "RandomAgent",
     "ReActAgent",
+    "ReflexionAgent",
 ]

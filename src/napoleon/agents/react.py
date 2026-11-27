@@ -74,6 +74,7 @@ class ReActAgent:
         self.max_retries = max_retries
         self.max_tokens = max_tokens
         self.recent: deque[str] = deque(maxlen=memory)
+        self.lessons = ""  # extra system text, set by agents that learn across games
 
     @property
     def client(self) -> LLMClient:
@@ -98,7 +99,7 @@ class ReActAgent:
         if self.recent:
             prompt += "\nYour recent actions, oldest first:\n" + "\n".join(self.recent)
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPT + self.lessons},
             {"role": "user", "content": prompt},
         ]
         usage = Usage()
