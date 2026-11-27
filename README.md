@@ -19,7 +19,7 @@ Status: early. Everything runs on a small deterministic fake game. The civ6-mcp 
 - `napoleon.runner`: `run_game` for one game and `run_episodes` for several in a row with the same agent object, so whatever the agent keeps carries over.
 - `napoleon.sweep`: runs an agents x scenarios x seeds matrix on the fake game (optionally in parallel threads, resumable) and aggregates run files into `summary.csv`, `runs.csv` and `summary.md`: score, size, illegal-action rate, steps, model calls, tokens and cost, and recovery from the bad opening against the same agent's normal games.
 - `napoleon.usage`: token and cost accounting. Each step in a run file carries its usage, and metrics sum it.
-- `napoleon.replay`: compact replay JSON and a self-contained HTML page per run ([format](docs/replay-format.md)).
+- `napoleon.replay`: compact replay JSON and a self-contained HTML page per run: hex map with units and cities, click a step to see the map after it, per-step reasoning with model usage and cost, and a chart of score (with the rival), cities, population, techs, cost and calls ([format](docs/replay-format.md)). `napoleon compare` overlays several runs on one page.
 - `napoleon.civ6`: `Civ6Backend` over civ6-mcp's game state, a live connection, and a scripted stand-in for tests.
 
 ## Try it
@@ -29,6 +29,7 @@ napoleon run --agent greedy --turns 100
 napoleon run --agent random --scenario bad_opening --seed 3
 napoleon metrics runs/fake-greedy-default-0.jsonl
 napoleon replay runs/fake-greedy-default-0.jsonl   # writes .replay.json and .replay.html
+napoleon compare runs/a.jsonl runs/b.jsonl --html compare.html
 napoleon run --agent direct --turns 20             # Ollama on localhost, model qwen3:8b
 napoleon run --agent direct --model qwen2.5:7b-instruct --base-url http://localhost:1234/v1
 napoleon run --agent react --turns 20              # same flags as direct

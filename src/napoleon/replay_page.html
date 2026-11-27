@@ -7,13 +7,13 @@
 <style>
   :root {
     --bg: #f6f5f1; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6a66; --line: #dddbd4;
-    --accent: #2f5fd0; --bad: #b3261e; --good: #2e7d32;
+    --accent: #2f5fd0; --bad: #b3261e; --good: #2e7d32; --free: #2e7d32; --hl: #d98a00;
     --p0: #2f5fd0; --p1: #c0392b; --p2: #333333; --p63: #333333; --pother: #8e44ad;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #161614; --panel: #201f1d; --text: #ecebe6; --muted: #a09e97; --line: #3a3935;
-      --accent: #7aa2ff; --bad: #ff8a80; --good: #81c784;
+      --accent: #7aa2ff; --bad: #ff8a80; --good: #81c784; --free: #81c784; --hl: #ffb84d;
       --p0: #7aa2ff; --p1: #ff7b6b; --p2: #d0d0d0; --p63: #d0d0d0; --pother: #c39bd3;
     }
   }
@@ -23,6 +23,10 @@
   header { padding: 16px; border-bottom: 1px solid var(--line); }
   header h1 { margin: 0; font-size: 18px; }
   header p { margin: 4px 0 0; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 1px 10px; color: var(--muted);
+          background: var(--panel); font-size: 12px; }
+  .chip b { color: var(--text); font-weight: 600; }
   main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; padding: 16px; }
   @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
   section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
@@ -31,17 +35,27 @@
   .controls input[type=range] { flex: 1; min-width: 120px; }
   button { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line);
            background: var(--bg); color: var(--text); cursor: pointer; }
+  button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
   #map { width: 100%; height: auto; display: block; }
-  #chart { width: 100%; height: 140px; display: block; }
+  #chart { width: 100%; height: 160px; display: block; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .tabs h2 { margin: 0 8px 0 0; align-self: center; }
   .stats { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); margin-top: 8px; }
   .stats b { color: var(--text); font-weight: 600; }
-  ol { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow: auto; }
-  li { border-top: 1px solid var(--line); padding: 8px 0; }
+  ol { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow: auto; }
+  li { border-top: 1px solid var(--line); padding: 8px 6px; cursor: pointer; border-left: 3px solid transparent; }
   li:first-child { border-top: 0; }
+  li:hover { background: var(--bg); }
+  li[aria-selected=true] { border-left-color: var(--hl); background: var(--bg); }
   .act { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-word; }
-  .why { color: var(--muted); margin-top: 2px; }
+  .why { color: var(--muted); margin-top: 2px; white-space: pre-wrap; word-break: break-word; }
+  .why.clamped { max-height: 7.5em; overflow: hidden; }
+  .more { font-size: 12px; padding: 0 6px; margin-top: 2px; }
   .err { color: var(--bad); }
   .ev { font-size: 12px; color: var(--muted); }
+  .badge { font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; margin-left: 6px;
+           color: var(--muted); font-family: system-ui, sans-serif; white-space: nowrap; }
+  .badge.free { color: var(--free); border-color: var(--free); }
   .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 </style>
@@ -50,9 +64,10 @@
 <header>
   <h1 id="title">Napoleon replay</h1>
   <p id="sub"></p>
+  <div class="chips" id="chips"></div>
 </header>
 <main>
-  <div style="display:grid; gap:16px; min-width:0">
+  <div style="display:grid; gap:16px; min-width:0; align-content:start">
     <section>
       <div class="controls">
         <button id="play" type="button">Play</button>
@@ -66,8 +81,8 @@
       <div class="stats" id="stats"></div>
     </section>
     <section>
-      <h2>Score over turns</h2>
-      <svg id="chart" role="img" aria-label="Score over turns"></svg>
+      <div class="tabs" id="tabs" role="group" aria-label="Chart series"><h2>Over turns</h2></div>
+      <svg id="chart" role="img" aria-label="Chosen series over turns"></svg>
     </section>
   </div>
   <section>
@@ -85,8 +100,64 @@ const el = (tag, attrs = {}, text) => {
   if (text !== undefined) n.textContent = text;
   return n;
 };
+const html = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const owner = (id) => css(id === null || id === undefined ? "--line" : ["--p0", "--p1", "--p2"][id] || (id === 63 ? "--p63" : "--pother"));
+
+// <pure>
+// The map as it stands after the first `upto` steps of a turn (null: the start of the turn).
+// Frames hold the start of a turn only, so within-turn moves are replayed from the steps.
+function stateAt(frame, steps, upto) {
+  const units = frame.units.map(([id, own, type, q, r, hp]) => ({ id, own, type, q, r, hp }));
+  const cities = frame.cities.map(([id, own, name, q, r, pop, prod]) => ({ id, own, name, q, r, pop, prod, fresh: false }));
+  if (upto === null) return { units, cities, focus: null };
+  let focus = null;
+  for (const s of steps.slice(0, upto + 1)) {
+    const a = s.action;
+    if (!a || typeof a !== "object" || !s.ok) continue;
+    const u = units.find((x) => x.id === a.unit_id);
+    if (a.type === "move_unit" && u) {
+      const hit = units.some((x) => x.own !== u.own && x.q === a.to.q && x.r === a.to.r);
+      focus = { from: [u.q, u.r], to: [a.to.q, a.to.r], attack: hit };
+      if (!hit) { u.q = a.to.q; u.r = a.to.r; }
+    } else if (a.type === "unit_command" && u) {
+      focus = { from: [u.q, u.r], to: null, attack: false };
+      if (a.command === "found_city") {
+        units.splice(units.indexOf(u), 1);
+        cities.push({ id: -u.id, own: u.own, name: "new city", q: u.q, r: u.r, pop: 1, prod: null, fresh: true });
+      }
+    } else if (a.type === "set_production") {
+      const c = cities.find((x) => x.id === a.city_id);
+      if (c) { c.prod = a.item; focus = { from: [c.q, c.r], to: null, attack: false }; }
+    }
+  }
+  return { units, cities, focus };
+}
+
+function describe(a) {
+  if (!a || typeof a !== "object") return String(a);
+  switch (a.type) {
+    case "move_unit": return `move unit ${a.unit_id} to (${a.to.q}, ${a.to.r})`;
+    case "unit_command": return `${a.command.replace("_", " ")} with unit ${a.unit_id}`;
+    case "set_production": return `city ${a.city_id} builds ${a.item}`;
+    case "set_research": return `research ${a.tech}`;
+    case "set_civic": return `civic ${a.civic}`;
+    case "end_turn": return "end turn";
+    default: return JSON.stringify(a);
+  }
+}
+
+function money(v) { return v === 0 ? "$0" : v < 0.01 ? "$" + v.toPrecision(2) : "$" + v.toFixed(2); }
+function usageText(u) {
+  if (!u) return null;
+  return `${u.calls} call${u.calls === 1 ? "" : "s"} · ${u.in} in / ${u.out} out` + (u.cost ? ` · ${money(u.cost)}` : "");
+}
+// </pure>
 
 function terrainColor(t) {
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
@@ -110,6 +181,11 @@ const hexPoints = (cx, cy) => Array.from({ length: 6 }, (_, i) => {
 }).join(" ");
 
 const frames = REPLAY.frames;
+const stepsByTurn = new Map();
+for (const s of REPLAY.steps) {
+  if (!stepsByTurn.has(s.turn)) stepsByTurn.set(s.turn, []);
+  stepsByTurn.get(s.turn).push(s);
+}
 const allTiles = frames.flatMap((f) => f.tiles);
 const xs = allTiles.map(([q, r]) => px(q, r)[0]), ys = allTiles.map(([q, r]) => px(q, r)[1]);
 const pad = SIZE * 1.5;
@@ -118,7 +194,11 @@ const box = allTiles.length
   : [0, 0, 100, 100];
 $("map").setAttribute("viewBox", box.join(" "));
 
-function drawMap(f) {
+let cur = 0;          // index into frames
+let selected = null;  // index into the current turn's steps, or null for the start of the turn
+let series = "score";
+
+function drawMap(f, state) {
   const svg = $("map");
   svg.replaceChildren();
   for (const [q, r, terrain, own, visible] of f.tiles) {
@@ -131,38 +211,64 @@ function drawMap(f) {
     g.appendChild(el("title", {}, `(${q}, ${r}) ${terrain}${own === null ? "" : `, owner ${own}`}`));
     svg.appendChild(g);
   }
-  for (const [id, own, name, q, r, pop] of f.cities) {
-    const [x, y] = px(q, r);
-    svg.appendChild(el("rect", { x: x - 7, y: y - 7, width: 14, height: 14, rx: 2, fill: owner(own), stroke: css("--panel"), "stroke-width": 1.5 }));
-    svg.appendChild(el("text", { x, y: y + 4, "text-anchor": "middle", "font-size": 9, "font-weight": 700, fill: css("--panel") }, pop));
-    svg.appendChild(el("text", { x, y: y - 10, "text-anchor": "middle", "font-size": 9, fill: css("--text") }, name));
+  for (const c of state.cities) {
+    const [x, y] = px(c.q, c.r);
+    svg.appendChild(el("rect", { x: x - 7, y: y - 7, width: 14, height: 14, rx: 2, fill: owner(c.own), stroke: css("--panel"), "stroke-width": 1.5 }));
+    svg.appendChild(el("text", { x, y: y + 4, "text-anchor": "middle", "font-size": 9, "font-weight": 700, fill: css("--panel") }, c.pop));
+    svg.appendChild(el("text", { x, y: y - 10, "text-anchor": "middle", "font-size": 9, fill: css("--text") }, c.name));
   }
-  for (const [id, own, type, q, r, hp] of f.units) {
-    const [x, y] = px(q, r);
-    const onCity = f.cities.some((c) => c[3] === q && c[4] === r);
+  for (const u of state.units) {
+    const [x, y] = px(u.q, u.r);
+    const onCity = state.cities.some((c) => c.q === u.q && c.r === u.r);
     const cx = onCity ? x + 7 : x, cy = onCity ? y + 7 : y;
-    const c = el("circle", { cx, cy, r: 6, fill: owner(own), stroke: css("--panel"), "stroke-width": 1.2 });
-    c.appendChild(el("title", {}, `${type} ${id} (owner ${own}, ${hp} hp)`));
+    const c = el("circle", { cx, cy, r: 6, fill: owner(u.own), stroke: css("--panel"), "stroke-width": 1.2 });
+    c.appendChild(el("title", {}, `${u.type} ${u.id} (owner ${u.own}, ${u.hp} hp)`));
     svg.appendChild(c);
-    svg.appendChild(el("text", { x: cx, y: cy + 3, "text-anchor": "middle", "font-size": 8, "font-weight": 700, fill: css("--panel") }, type[0].toUpperCase()));
+    svg.appendChild(el("text", { x: cx, y: cy + 3, "text-anchor": "middle", "font-size": 8, "font-weight": 700, fill: css("--panel") }, u.type[0].toUpperCase()));
+  }
+  const fo = state.focus;
+  if (fo) {
+    const [fx, fy] = px(...fo.from);
+    if (fo.to) {
+      const [tx, ty] = px(...fo.to);
+      svg.appendChild(el("line", { x1: fx, y1: fy, x2: tx, y2: ty, stroke: css("--hl"), "stroke-width": 2, "stroke-dasharray": fo.attack ? "2 2" : "none" }));
+      svg.appendChild(el("polygon", { points: hexPoints(tx, ty), fill: "none", stroke: css("--hl"), "stroke-width": 2 }));
+    }
+    svg.appendChild(el("circle", { cx: fx, cy: fy, r: 10, fill: "none", stroke: css("--hl"), "stroke-width": 2 }));
   }
 }
 
+const SERIES = [
+  ["score", "Score"], ["cities", "Cities"], ["population", "Population"], ["techs", "Techs"],
+  ["cost", "Cost"], ["calls", "Model calls"],
+];
+const available = SERIES.filter(([k]) => k !== "cost" && k !== "calls" || REPLAY.totals.llm_calls > 0);
+
 function drawChart(turn) {
   const svg = $("chart");
-  const W = svg.clientWidth || 600, H = 140, P = 28;
+  const W = svg.clientWidth || 600, H = 160, P = 30;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.replaceChildren();
-  const s = REPLAY.series.score;
+  const s = REPLAY.series[series] || [];
   if (!s.length) return;
-  const t0 = s[0][0], t1 = s[s.length - 1][0] || 1, vmax = Math.max(1, ...s.map((p) => p[1]));
+  const lines = [[s, css("--accent"), ""]];
+  if (series === "score" && REPLAY.series.rival.length) lines.push([REPLAY.series.rival, css("--p1"), "4 3"]);
+  const all = lines.flatMap(([l]) => l);
+  const t0 = s[0][0], t1 = s[s.length - 1][0] || 1, vmax = Math.max(1e-9, ...all.map((p) => p[1]));
+  const fmt = (v) => (series === "cost" ? money(v) : Number.isInteger(v) ? String(v) : v.toFixed(1));
   const X = (t) => P + (W - 2 * P) * (t - t0) / Math.max(1, t1 - t0);
   const Y = (v) => H - P + 8 - (H - 2 * P) * v / vmax;
   svg.appendChild(el("line", { x1: P, y1: Y(0), x2: W - P, y2: Y(0), stroke: css("--line") }));
-  svg.appendChild(el("text", { x: P - 4, y: Y(vmax) + 4, "text-anchor": "end", "font-size": 10, fill: css("--muted") }, vmax));
-  svg.appendChild(el("text", { x: P - 4, y: Y(0) + 4, "text-anchor": "end", "font-size": 10, fill: css("--muted") }, 0));
+  svg.appendChild(el("text", { x: P - 4, y: Y(vmax) + 4, "text-anchor": "end", "font-size": 10, fill: css("--muted") }, fmt(vmax)));
+  svg.appendChild(el("text", { x: P - 4, y: Y(0) + 4, "text-anchor": "end", "font-size": 10, fill: css("--muted") }, fmt(0)));
   svg.appendChild(el("text", { x: W - P, y: H - 4, "text-anchor": "end", "font-size": 10, fill: css("--muted") }, `turn ${t1}`));
-  svg.appendChild(el("polyline", { points: s.map(([t, v]) => `${X(t)},${Y(v)}`).join(" "), fill: "none", stroke: css("--accent"), "stroke-width": 2 }));
+  for (const [l, color, dash] of lines) {
+    svg.appendChild(el("polyline", { points: l.map(([t, v]) => `${X(t)},${Y(v)}`).join(" "), fill: "none", stroke: color, "stroke-width": 2, "stroke-dasharray": dash }));
+  }
+  if (lines.length > 1) {
+    svg.appendChild(el("text", { x: P + 4, y: 12, "font-size": 10, fill: css("--accent") }, "you"));
+    svg.appendChild(el("text", { x: P + 34, y: 12, "font-size": 10, fill: css("--p1") }, "rival (dashed)"));
+  }
   const here = s.find((p) => p[0] === turn);
   if (here) {
     svg.appendChild(el("line", { x1: X(turn), y1: P - 8, x2: X(turn), y2: Y(0), stroke: css("--muted"), "stroke-dasharray": "3 3" }));
@@ -170,74 +276,132 @@ function drawChart(turn) {
   }
 }
 
-function describe(a) {
-  if (!a || typeof a !== "object") return String(a);
-  switch (a.type) {
-    case "move_unit": return `move unit ${a.unit_id} to (${a.to.q}, ${a.to.r})`;
-    case "unit_command": return `${a.command.replace("_", " ")} with unit ${a.unit_id}`;
-    case "set_production": return `city ${a.city_id} builds ${a.item}`;
-    case "set_research": return `research ${a.tech}`;
-    case "set_civic": return `civic ${a.civic}`;
-    case "end_turn": return "end turn";
-    default: return JSON.stringify(a);
+function drawTabs() {
+  const box = $("tabs");
+  for (const b of box.querySelectorAll("button")) b.remove();
+  for (const [key, label] of available) {
+    const b = html("button", "", label);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(key === series));
+    b.addEventListener("click", () => { series = key; drawTabs(); drawChart(frames[cur].turn); });
+    box.appendChild(b);
   }
 }
 
 function drawSteps(turn) {
   const list = $("steps");
   list.replaceChildren();
-  const steps = REPLAY.steps.filter((s) => s.turn === turn);
-  $("stepshead").textContent = `Turn ${turn}: ${steps.length} step${steps.length === 1 ? "" : "s"}`;
-  for (const s of steps) {
-    const li = document.createElement("li");
-    const act = document.createElement("div");
-    act.className = "act";
-    act.textContent = `${s.step}. ${describe(s.action)}`;
+  const steps = stepsByTurn.get(turn) || [];
+  const paid = steps.reduce((a, s) => a + (s.usage ? s.usage.cost : 0), 0);
+  $("stepshead").textContent = `Turn ${turn}: ${steps.length} step${steps.length === 1 ? "" : "s"}` + (paid ? ` · ${money(paid)}` : "");
+  steps.forEach((s, i) => {
+    const li = html("li");
+    li.setAttribute("aria-selected", String(i === selected));
+    li.tabIndex = 0;
+    const act = html("div", "act", `${s.step}. ${describe(s.action)}`);
+    const u = usageText(s.usage);
+    if (u) act.appendChild(html("span", "badge", u));
+    else if (REPLAY.totals.llm_calls > 0) act.appendChild(html("span", "badge free", "no model call"));
     li.appendChild(act);
-    if (s.reasoning) { const w = document.createElement("div"); w.className = "why"; w.textContent = s.reasoning; li.appendChild(w); }
-    if (!s.ok) { const e = document.createElement("div"); e.className = "err"; e.textContent = s.error || "refused"; li.appendChild(e); }
-    for (const ev of s.events) { const e = document.createElement("div"); e.className = "ev"; e.textContent = ev; li.appendChild(e); }
+    if (s.reasoning) {
+      const lines = s.reasoning.split("\n").length;
+      const why = html("div", lines > 6 || s.reasoning.length > 600 ? "why clamped" : "why", s.reasoning);
+      li.appendChild(why);
+      if (why.className.includes("clamped")) {
+        const more = html("button", "more", "show all");
+        more.type = "button";
+        more.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const open = why.classList.toggle("clamped");
+          more.textContent = open ? "show all" : "show less";
+        });
+        li.appendChild(more);
+      }
+    }
+    if (!s.ok) li.appendChild(html("div", "err", s.error || "refused"));
+    for (const ev of s.events) li.appendChild(html("div", "ev", ev));
+    const pick = () => { selected = selected === i ? null : i; render(); };
+    li.addEventListener("click", pick);
+    li.addEventListener("keydown", (e) => { if (e.key === "Enter") pick(); });
     list.appendChild(li);
-  }
+  });
 }
 
-function show(i) {
-  const f = frames[i];
-  $("slider").value = i;
-  $("turnlabel").textContent = `Turn ${f.turn}`;
-  drawMap(f);
+function render() {
+  const f = frames[cur];
+  const steps = stepsByTurn.get(f.turn) || [];
+  if (selected !== null && selected >= steps.length) selected = null;
+  $("slider").value = cur;
+  $("turnlabel").textContent = `Turn ${f.turn}` + (selected === null ? "" : `, after step ${steps[selected].step}`);
+  const state = stateAt(f, steps, selected);
+  drawMap(f, state);
   drawChart(f.turn);
   drawSteps(f.turn);
-  const mine = f.cities.filter((c) => c[1] === f.player);
-  $("stats").innerHTML = "";
-  for (const [k, v] of [["Score", f.score], ["Cities", mine.length], ["Pop", mine.reduce((a, c) => a + c[5], 0)], ["Gold", f.gold], ["Tech", f.tech || "none"], ["Civic", f.civic || "none"]]) {
-    const span = document.createElement("span");
+  writeHash();
+  const mine = state.cities.filter((c) => c.own === f.player);
+  const rival = REPLAY.series.rival.find((p) => p[0] === f.turn);
+  const pairs = [["Score", f.score], ["Cities", mine.length], ["Pop", mine.reduce((a, c) => a + c.pop, 0)], ["Gold", f.gold], ["Tech", f.tech || "none"], ["Civic", f.civic || "none"]];
+  if (rival) pairs.splice(1, 0, ["Rival", rival[1]]);
+  $("stats").replaceChildren();
+  for (const [k, v] of pairs) {
+    const span = html("span");
     span.append(`${k} `);
-    const b = document.createElement("b"); b.textContent = v; span.appendChild(b);
+    span.appendChild(html("b", "", v));
     $("stats").appendChild(span);
   }
 }
 
-const run = REPLAY.run;
+function go(i) { cur = Math.max(0, Math.min(frames.length - 1, i)); selected = null; render(); }
+
+// #turn=12&step=2 opens turn 12 with its third step selected, so a moment can be linked to.
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const i = frames.findIndex((f) => f.turn === Number(p.get("turn")));
+  if (i >= 0) cur = i;
+  const k = p.get("step");
+  selected = k !== null && k !== "" && Number.isInteger(Number(k)) ? Number(k) : null;
+}
+function writeHash() {
+  try {
+    const f = frames[cur];
+    history.replaceState(null, "", `#turn=${f.turn}` + (selected === null ? "" : `&step=${selected}`));
+  } catch (e) { /* file:// pages in some browsers refuse; the link is a convenience */ }
+}
+
+const run = REPLAY.run, T = REPLAY.totals;
 $("title").textContent = `${run.agent} on ${run.backend} · ${run.scenario}, seed ${run.seed}`;
 $("sub").textContent = `Run ${run.run_id} · ${frames.length} turns · ${REPLAY.steps.length} steps · ended: ${run.ended || "unknown"}`;
-$("legend").innerHTML = `<span><i class="sw" style="background:${css("--p0")}"></i>you</span><span><i class="sw" style="background:${css("--p1")}"></i>rival</span><span><i class="sw" style="background:${css("--p63")}"></i>barbarians</span><span>squares are cities, circles units, faded tiles under fog</span>`;
+const chips = [["score", T.final_score], ["illegal actions", `${(T.illegal_action_rate * 100).toFixed(0)}% (${T.failed_steps})`]];
+if (run.config && run.config.model) chips.unshift(["model", run.config.model]);
+if (T.llm_calls) chips.push(["model calls", `${T.llm_calls} for ${T.steps} steps`], ["tokens", `${T.input_tokens} in / ${T.output_tokens} out`], ["cost", money(T.cost_usd)]);
+for (const [k, v] of chips) {
+  const c = html("span", "chip", `${k} `);
+  c.appendChild(html("b", "", v));
+  $("chips").appendChild(c);
+}
+$("legend").innerHTML = `<span><i class="sw" style="background:${css("--p0")}"></i>you</span><span><i class="sw" style="background:${css("--p1")}"></i>rival</span><span><i class="sw" style="background:${css("--p63")}"></i>barbarians</span><span><i class="sw" style="background:${css("--hl")}"></i>selected step</span><span>squares are cities, circles units, faded tiles under fog. Click a step to see the map after it.</span>`;
 $("slider").max = Math.max(0, frames.length - 1);
-$("slider").addEventListener("input", (e) => show(+e.target.value));
-$("prev").addEventListener("click", () => show(Math.max(0, +$("slider").value - 1)));
-$("next").addEventListener("click", () => show(Math.min(frames.length - 1, +$("slider").value + 1)));
+$("slider").addEventListener("input", (e) => go(+e.target.value));
+$("prev").addEventListener("click", () => go(cur - 1));
+$("next").addEventListener("click", () => go(cur + 1));
 let timer = null;
+function stop() { if (timer) { clearInterval(timer); timer = null; } $("play").textContent = "Play"; }
 $("play").addEventListener("click", () => {
-  if (timer) { clearInterval(timer); timer = null; $("play").textContent = "Play"; return; }
+  if (timer) return stop();
   $("play").textContent = "Pause";
-  timer = setInterval(() => {
-    const i = +$("slider").value;
-    if (i >= frames.length - 1) { clearInterval(timer); timer = null; $("play").textContent = "Play"; return; }
-    show(i + 1);
-  }, 400);
+  timer = setInterval(() => { if (cur >= frames.length - 1) return stop(); go(cur + 1); }, 400);
 });
-addEventListener("resize", () => drawChart(frames[+$("slider").value].turn));
-if (frames.length) show(0);
+addEventListener("keydown", (e) => {
+  if (e.target.closest && e.target.closest("button, input, li")) return;
+  if (e.key === "ArrowLeft") go(cur - 1);
+  else if (e.key === "ArrowRight") go(cur + 1);
+  else if (e.key === " ") { e.preventDefault(); $("play").click(); }
+});
+addEventListener("resize", () => drawChart(frames[cur].turn));
+drawTabs();
+readHash();
+addEventListener("hashchange", () => { readHash(); render(); });
+if (frames.length) render();
 </script>
 </body>
 </html>
