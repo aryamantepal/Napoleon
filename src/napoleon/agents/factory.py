@@ -18,6 +18,7 @@ OPTIONS: dict[str, tuple[str, ...]] = {
         "memory_path",
         "max_reflections",
     ),
+    "voyager": ("max_retries", "max_tokens", "skills_path", "verify"),
 }
 
 

@@ -82,6 +82,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     refl.add_argument("--max-reflections", type=int, default=None, help="reflexion: lessons shown")
 
+    sk = run.add_argument_group("skills")
+    sk.add_argument(
+        "--skills",
+        type=Path,
+        default=None,
+        help="voyager: skill library file (default runs/skills/library.json)",
+    )
+    sk.add_argument("--clear-skills", action="store_true", help="voyager: start with no skills")
+    sk.add_argument("--no-verify", action="store_true", help="voyager: store skills untested")
+
     metrics = sub.add_parser("metrics", help="print metrics for a recorded run")
     metrics.add_argument("path", type=Path)
 
@@ -195,9 +205,13 @@ def build_agent(args: argparse.Namespace):
         base=args.base,
         memory_path=args.memory,
         max_reflections=args.max_reflections,
+        skills_path=args.skills,
+        verify=False if args.no_verify else None,
     )
     if args.clear_memory and hasattr(agent, "memory"):
         agent.memory.clear()
+    if args.clear_skills and hasattr(agent, "library"):
+        agent.library.clear()
     return agent
 
 
