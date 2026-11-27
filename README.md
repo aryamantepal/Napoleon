@@ -38,7 +38,7 @@ LLM agents talk to any OpenAI-compatible endpoint. Defaults are Ollama at
 key, put it in `NAPOLEON_LLM_API_KEY` (or name another variable with `--api-key-env`). Hosted
 models cost money: pass `--price-in` and `--price-out` (USD per million tokens) to have cost
 tracked; local models report tokens at zero cost. `--no-think` appends `/no_think` for Qwen3.
-Unusable output is retried (`--max-retries`, default 2), then sent to the game as a malformed
+Ollama's default context window is 4096 tokens, which truncates the prompt from the front once a game has many units and legal actions; start the server with a larger one (for example `OLLAMA_CONTEXT_LENGTH=16384 ollama serve`). Unusable output is retried (`--max-retries`, default 2), then sent to the game as a malformed
 action, which counts in the illegal-action rate.
 
 ## Development
