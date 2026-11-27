@@ -130,6 +130,10 @@ def build_parser() -> argparse.ArgumentParser:
     metrics = sub.add_parser("metrics", help="print metrics for a recorded run")
     metrics.add_argument("path", type=Path)
 
+    compare = sub.add_parser("compare", help="overlay several run files on one HTML page")
+    compare.add_argument("paths", type=Path, nargs="+")
+    compare.add_argument("--html", type=Path, default=Path("compare.html"))
+
     replay = sub.add_parser("replay", help="turn a run file into a replay JSON and HTML page")
     replay.add_argument("path", type=Path)
     replay.add_argument("--out", type=Path, default=None, help="default: <run>.replay.json")
@@ -215,6 +219,16 @@ def main(argv: list[str] | None = None) -> int:
         from napoleon.recording import load_run
 
         print(json.dumps(_summary(compute_metrics(load_run(args.path))), indent=2))
+        return 0
+    if args.command == "compare":
+        from napoleon.replay import write_compare
+
+        try:
+            data = write_compare(args.paths, args.html)
+        except ValueError as exc:  # a run with no snapshots, or a file that is not a run
+            print(f"napoleon: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps({"runs": len(data["runs"]), "html": str(args.html)}))
         return 0
     if args.command == "replay":
         from napoleon.replay import write_replay
