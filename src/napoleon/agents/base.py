@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from napoleon.schema import Action, Snapshot
+from napoleon.usage import Usage
 
 
 @dataclass(frozen=True)
 class Decision:
     action: Action | dict | str
     reasoning: str | None = None
+    usage: Usage | None = None
 
 
 @runtime_checkable

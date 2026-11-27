@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from napoleon import __version__
+from napoleon.agents import AGENTS, LLM_AGENTS
+from napoleon.llm import API_KEY_ENV, DEFAULT_BASE_URL, DEFAULT_MODEL, LLMError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,7 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     run = sub.add_parser("run", help="play one game and record it")
-    run.add_argument("--agent", choices=["random", "greedy"], default="greedy")
+    run.add_argument("--agent", choices=sorted(AGENTS), default="greedy")
     run.add_argument(
         "--backend",
         choices=["fake", "civ6", "civ6-scripted"],
@@ -36,6 +39,27 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--out", type=Path, default=None, help="run file (default runs/<agent>-<seed>.jsonl)"
     )
+    llm = run.add_argument_group("LLM agents", "for any agent that talks to a model")
+    llm.add_argument("--model", default=None, help=f"default {DEFAULT_MODEL}")
+    llm.add_argument(
+        "--base-url",
+        default=None,
+        help=f"OpenAI-compatible endpoint (default {DEFAULT_BASE_URL}, Ollama)",
+    )
+    llm.add_argument(
+        "--api-key-env",
+        default=API_KEY_ENV,
+        metavar="NAME",
+        help=f"environment variable holding the API key, if the endpoint needs one "
+        f"(default {API_KEY_ENV})",
+    )
+    llm.add_argument("--temperature", type=float, default=0.2)
+    llm.add_argument("--max-retries", type=int, default=2, help="retries on unusable output")
+    llm.add_argument("--max-tokens", type=int, default=2048, help="per model call")
+    llm.add_argument("--no-think", action="store_true", help="append /no_think (Qwen3)")
+    llm.add_argument("--json-mode", action="store_true", help="send response_format=json_object")
+    llm.add_argument("--price-in", type=float, default=0.0, help="USD per million input tokens")
+    llm.add_argument("--price-out", type=float, default=0.0, help="USD per million output tokens")
 
     metrics = sub.add_parser("metrics", help="print metrics for a recorded run")
     metrics.add_argument("path", type=Path)
@@ -51,7 +75,6 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "run":
-        from napoleon.agents import AGENTS
         from napoleon.env import CivEnv
         from napoleon.fake import FakeCivGame
         from napoleon.runner import run_game
@@ -74,14 +97,18 @@ def main(argv: list[str] | None = None) -> int:
                 saves = saves or {args.scenario: "napoleon_default"}
                 backend = Civ6Backend(ScriptedSource(), saves, max_turns=args.turns)
         env = CivEnv(backend)
-        m = run_game(
-            env,
-            AGENTS[args.agent](),
-            out,
-            backend=args.backend,
-            scenario=args.scenario,
-            seed=args.seed,
-        )
+        try:
+            m = run_game(
+                env,
+                build_agent(args),
+                out,
+                backend=args.backend,
+                scenario=args.scenario,
+                seed=args.seed,
+            )
+        except LLMError as exc:
+            print(f"napoleon: {exc}", file=sys.stderr)
+            return 2
         print(json.dumps(_summary(m) | {"run_file": str(out)}, indent=2))
         return 0
     if args.command == "metrics":
@@ -104,6 +131,27 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def build_agent(args: argparse.Namespace):
+    """Make the agent a ``run`` command asked for, with an LLM client where it needs one."""
+    if args.agent not in LLM_AGENTS:
+        return AGENTS[args.agent]()
+    from napoleon.llm import make_client
+    from napoleon.usage import Pricing
+
+    client = make_client(
+        args.model,
+        args.base_url,
+        args.api_key_env,
+        temperature=args.temperature,
+        pricing=Pricing(input_per_mtok=args.price_in, output_per_mtok=args.price_out),
+        no_think=args.no_think,
+        json_mode=args.json_mode,
+    )
+    return AGENTS[args.agent](
+        client=client, max_retries=args.max_retries, max_tokens=args.max_tokens
+    )
+
+
 def _summary(m) -> dict:
     return {
         "turns_played": m.turns_played,
@@ -114,6 +162,10 @@ def _summary(m) -> dict:
         "population": int(m.population_by_turn[-1][1]),
         "techs": int(m.techs_by_turn[-1][1]),
         "victory_progress": m.final_victory_progress,
+        "llm_calls": m.llm_calls,
+        "input_tokens": m.input_tokens,
+        "output_tokens": m.output_tokens,
+        "cost_usd": round(m.cost_usd, 6),
     }
 
 
