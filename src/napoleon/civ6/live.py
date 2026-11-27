@@ -32,9 +32,46 @@ print("{sentinel}")
 class LiveSource:
     """civ6-mcp's ``GameState`` plus the two reads ``Civ6Source`` adds."""
 
-    def __init__(self, game_state: Any, lua: Any) -> None:
+    def __init__(
+        self,
+        game_state: Any,
+        lua: Any,
+        *,
+        load_timeout: float = 120.0,
+        poll_every: float = 2.0,
+    ) -> None:
         self._gs = game_state
         self._lq = lua
+        self.load_timeout = load_timeout
+        self.poll_every = poll_every
+
+    async def load_game_save(self, save_name: str) -> str:
+        """Load a save and return once the reloaded game answers reads.
+
+        civ6-mcp's ``load_game_save`` returns as soon as the load starts. The reload
+        tears down the Lua states, so this reconnects and polls until the game reads
+        back. It also forgets earlier loads: civ6-mcp counts loads across different
+        turns as save scumming and aborts the run, but every Napoleon episode starts
+        with one.
+        """
+        result = await self._gs.load_game_save(save_name)
+        if result.lstrip().startswith(("Error", "ERR", "FAILED")):
+            return result
+        self._gs._save_load_history.clear()
+        self._gs._run_aborted = False
+        self._gs._last_snapshot = None
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.load_timeout
+        last_error: Exception | None = None
+        while loop.time() < deadline:
+            await asyncio.sleep(self.poll_every)
+            try:
+                await self._gs.conn.reconnect()
+                await self._gs.get_game_overview()
+                return result
+            except Exception as exc:  # the game is still loading
+                last_error = exc
+        return f"Error: {save_name!r} did not finish loading: {last_error}"
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._gs, name)

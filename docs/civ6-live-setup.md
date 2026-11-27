@@ -12,15 +12,35 @@ the game open.
    README for your OS: on Windows the Tuner is an in-game option and needs the Civ VI
    SDK; on macOS and Linux set `EnableTuner 1` in `AppOptions.txt`. Only one tuner
    connection is allowed, so close FireTuner.exe and any civ6-mcp MCP server first.
-2. Python 3.12 or newer (civ6-mcp needs it), in one environment:
+2. Python 3.12 or newer (civ6-mcp needs it). From the Napoleon checkout:
 
    ```
-   pip install civ6-mcp
-   pip install -e path/to/napoleon
+   pip install -e ".[dev,civ6]"
    ```
+
+   The `civ6` extra pins civ6-mcp to the commit this backend was checked against.
 
 3. Start a game, then check the connection with civ6-mcp's
    `python scripts/test_connection.py` from its repo.
+
+## What Napoleon relies on in civ6-mcp
+
+civ6-mcp ships 76 MCP tools; Napoleon calls 18 `GameState` methods directly and runs
+two small Lua reads of its own. Three civ6-mcp behaviours are handled in
+`napoleon.civ6.live` and `napoleon.civ6.source`:
+
+- `load_game_save` returns as soon as the load starts. `LiveSource` reconnects and
+  polls until the reloaded game answers reads (up to two minutes).
+- civ6-mcp treats loads across several turns as save scumming and, after eight,
+  aborts the run. Every Napoleon episode starts with a load, so `LiveSource` clears
+  that history on each reset.
+- `end_turn` reports a turn that did not end as `End turn blocked ...`,
+  `End turn requested (turn is still N)` or `RUN ABORTED ...`, not as `Error`. These
+  come back as failed steps.
+
+On macOS and Windows a save is found and loaded through Lua. If Lua cannot see it,
+civ6-mcp falls back to clicking through the menus with OCR, which needs its
+`launcher` extra (`pip install 'civ6-mcp[launcher-macos]'`) and a windowed game.
 
 ## Starting saves
 
