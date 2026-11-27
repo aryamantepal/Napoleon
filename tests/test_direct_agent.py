@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from stubs import PickLegal, chat_server, legal_lines, pick_legal
 
 from napoleon.agents import AGENTS, LLM_AGENTS, DirectAgent
@@ -180,3 +181,26 @@ def test_cli_reports_an_unreachable_server(tmp_path, capsys):
     )
     assert code == 2
     assert "could not get a reply" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "payload, message",
+    [
+        ({}, "no 'type' field"),
+        ({"type": "warp"}, "unknown action type"),
+        ({"type": "set_production", "city_id": 1}, "missing field 'item'"),
+        ({"type": "end_turn", "extra": 1}, "unexpected field 'extra'"),
+    ],
+)
+def test_validation_errors_are_put_in_plain_words(payload, message):
+    parsed = parse_reply(json.dumps({"action": payload}))
+    assert parsed.action is None and message in parsed.error
+
+
+def test_retry_note_shows_a_real_action_as_a_format_example():
+    s = _fresh()
+    client = ScriptedClient(["junk", pick_legal])
+    DirectAgent(client).act(s)
+    note = client.calls[1][-1]["content"]
+    assert "rejected: no JSON object found" in note
+    assert json.dumps(s.legal_actions[0].model_dump(mode="json"), separators=(",", ":")) in note

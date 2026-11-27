@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from napoleon.agents.base import Decision
-from napoleon.agents.prompting import SYSTEM_PROMPT, parse_reply, render_snapshot
+from napoleon.agents.prompting import SYSTEM_PROMPT, parse_reply, render_snapshot, retry_note
 from napoleon.llm import LLMClient, make_client
 from napoleon.schema import Snapshot
 from napoleon.usage import Usage
@@ -62,11 +62,7 @@ class DirectAgent:
                 return Decision(parsed.action, note + (parsed.reasoning or ""), usage)
             messages += [
                 {"role": "assistant", "content": reply.text},
-                {
-                    "role": "user",
-                    "content": f"That reply was rejected: {parsed.error}. "
-                    "Reply again with only the JSON object.",
-                },
+                {"role": "user", "content": retry_note(parsed.error, snapshot)},
             ]
         why = f"unusable output after {self.max_retries + 1} attempts: {parsed.error}"
         return Decision(parsed.raw, why, usage)

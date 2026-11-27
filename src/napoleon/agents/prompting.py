@@ -157,6 +157,30 @@ def parse_reply(text: str) -> Reply:
     try:
         return Reply(parse_action(payload), payload, reasoning)
     except ValidationError as exc:
-        err = exc.errors()[0]
-        where = ".".join(str(p) for p in err["loc"])
-        return Reply(None, payload, reasoning, f"invalid action ({where}: {err['msg']})")
+        return Reply(None, payload, reasoning, f"invalid action ({_explain(exc)})")
+
+
+def _explain(exc: ValidationError) -> str:
+    """Pydantic's errors, put in words a small model can act on."""
+    parts = []
+    for err in exc.errors()[:3]:
+        where = ".".join(str(p) for p in err["loc"][1:])
+        if err["type"] == "union_tag_not_found":
+            parts.append("the action has no 'type' field")
+        elif err["type"] == "union_tag_invalid":
+            parts.append("unknown action type")
+        elif err["type"] == "missing":
+            parts.append(f"missing field '{where}'")
+        elif err["type"] == "extra_forbidden":
+            parts.append(f"unexpected field '{where}'")
+        else:
+            parts.append(f"{where}: {err['msg']}")
+    return "; ".join(parts)
+
+
+def retry_note(error: str, snap: Snapshot) -> str:
+    """What to tell a model whose reply was unusable, with a real action as a format example."""
+    note = f"That reply was rejected: {error.rstrip('.')}. Reply again with only the JSON object."
+    if snap.legal_actions:
+        note += f" Actions look like this: {action_json(snap.legal_actions[0])}"
+    return note
