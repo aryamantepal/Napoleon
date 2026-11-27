@@ -12,9 +12,14 @@ dependencies = ["pydantic>=2.6"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+# Real Civ VI. Pinned to the civ6-mcp commit the backend was checked against.
+civ6 = ["civ6-mcp @ git+https://github.com/lmwilki/civ6-mcp@dd20190 ; python_version >= '3.12'"]
 
 [project.scripts]
 napoleon = "napoleon.cli:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/napoleon"]

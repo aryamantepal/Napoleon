@@ -8,7 +8,8 @@ Two methods are not on ``GameState``: ``end_turn_blockers`` and ``ready_unit_ids
 ``napoleon.civ6.live`` adds them with small Lua queries.
 
 Action methods return civ6-mcp's result text. Text starting ``Error``, ``ERR`` or
-``FAILED`` means the game refused the action.
+``FAILED`` means the game refused the action. ``end_turn`` reports a turn that did not
+end in its own words, listed in ``REFUSALS``.
 """
 
 from __future__ import annotations
@@ -49,8 +50,18 @@ class Civ6Source(Protocol):
     async def end_turn(self) -> str: ...
 
 
+REFUSALS = (
+    "Error",
+    "ERR",
+    "FAILED",
+    "End turn blocked",
+    "End turn requested (turn is still",
+    "RUN ABORTED",
+)
+
+
 def is_error(result: str) -> bool:
-    return result.lstrip().startswith(("Error", "ERR", "FAILED"))
+    return result.lstrip().startswith(REFUSALS)
 
 
 def unit_index(unit_id: int) -> int:
