@@ -62,3 +62,14 @@ def test_cli_run_and_metrics(tmp_path, capsys):
     assert main(["metrics", str(out)]) == 0
     second = json.loads(capsys.readouterr().out)
     assert second["final_score"] == first["final_score"]
+
+
+def test_cli_max_steps_stops_a_run(tmp_path, capsys):
+    out = tmp_path / "m.jsonl"
+    assert (
+        main(["run", "--agent", "greedy", "--turns", "50", "--max-steps", "7", "--out", str(out)])
+        == 0
+    )
+    capsys.readouterr()
+    run = load_run(out)
+    assert run.footer.reason == "step_limit" and len(run.steps) == 7
