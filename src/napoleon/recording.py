@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from napoleon import __version__
 from napoleon.schema import SCHEMA_VERSION, Action, Snapshot, StepResult
+from napoleon.usage import Usage
 
 
 class _Model(BaseModel):
@@ -51,6 +52,7 @@ class StepRecord(_Model):
     reasoning: str | None = None
     result: StepResult
     elapsed_ms: float = 0.0
+    usage: Usage | None = None
 
 
 class RunFooter(_Model):
@@ -84,6 +86,7 @@ class Recorder:
         result: StepResult,
         reasoning: str | None = None,
         elapsed_ms: float = 0.0,
+        usage: Usage | None = None,
     ) -> StepRecord:
         """Record one step. ``seen`` is the snapshot the agent acted on."""
         full = seen if seen.turn != self._last_turn else None
@@ -99,6 +102,7 @@ class Recorder:
             reasoning=reasoning,
             result=result,
             elapsed_ms=elapsed_ms,
+            usage=usage,
         )
         self._write(rec)
         self._step += 1

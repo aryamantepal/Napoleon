@@ -24,7 +24,10 @@ def run_game(
     """Run until the game ends or ``max_steps`` is hit. The run file is written either way."""
     agent.reset(seed)
     snap = env.reset(scenario, seed)
-    header = RunHeader(backend=backend, scenario=scenario, seed=seed, agent=agent.name)
+    config = agent.config() if hasattr(agent, "config") else {}
+    header = RunHeader(
+        backend=backend, scenario=scenario, seed=seed, agent=agent.name, config=config
+    )
     reason = "done"
     with Recorder(out, header) as rec:
         for _ in range(max_steps):
@@ -34,7 +37,7 @@ def run_game(
             decision = agent.act(snap)
             nxt, result = env.step(decision.action)
             elapsed = (time.perf_counter() - start) * 1000
-            rec.record(snap, decision.action, result, decision.reasoning, elapsed)
+            rec.record(snap, decision.action, result, decision.reasoning, elapsed, decision.usage)
             snap = nxt
         else:
             reason = "step_limit"
