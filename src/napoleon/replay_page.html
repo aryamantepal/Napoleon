@@ -53,6 +53,7 @@
   .more { font-size: 12px; padding: 0 6px; margin-top: 2px; }
   .err { color: var(--bad); }
   .ev { font-size: 12px; color: var(--muted); }
+  .agent-ev { color: var(--text); font-weight: 600; }
   .badge { font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; margin-left: 6px;
            color: var(--muted); font-family: system-ui, sans-serif; white-space: nowrap; }
   .badge.free { color: var(--free); border-color: var(--free); }
@@ -288,6 +289,17 @@ function drawTabs() {
   }
 }
 
+function agentEvent(ev) {
+  if (ev.type === "harness_refined") {
+    const bad = Object.entries(ev.passes || {}).filter(([, p]) => p.status === "error").map(([k]) => k);
+    return `Harness refined to generation ${ev.generation}` + (ev.changed ? "" : " (no change)") +
+      `: ${ev.skills} skills, ${ev.subagents} sub-agents, ${ev.memory} memory entries, ` +
+      `strategy ${ev.prompt_chars} chars` + (bad.length ? `; failed passes: ${bad.join(", ")}` : "");
+  }
+  if (ev.type === "harness_rollback") return `Harness rolled back (${ev.reason}); now generation ${ev.generation}`;
+  return JSON.stringify(ev);
+}
+
 function drawSteps(turn) {
   const list = $("steps");
   list.replaceChildren();
@@ -320,6 +332,7 @@ function drawSteps(turn) {
     }
     if (!s.ok) li.appendChild(html("div", "err", s.error || "refused"));
     for (const ev of s.events) li.appendChild(html("div", "ev", ev));
+    for (const ev of s.agent_events || []) li.appendChild(html("div", "ev agent-ev", agentEvent(ev)));
     const pick = () => { selected = selected === i ? null : i; render(); };
     li.addEventListener("click", pick);
     li.addEventListener("keydown", (e) => { if (e.key === "Enter") pick(); });

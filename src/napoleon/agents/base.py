@@ -14,6 +14,7 @@ class Decision:
     action: Action | dict | str
     reasoning: str | None = None
     usage: Usage | None = None
+    events: tuple[dict, ...] = ()  # agent-side happenings worth showing in a replay
 
 
 @runtime_checkable

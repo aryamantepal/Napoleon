@@ -93,6 +93,7 @@ def build_replay(run: Run) -> dict[str, Any]:
             "ok": s.result.ok,
             "error": s.result.error,
             "events": list(s.result.events),
+            "agent_events": s.agent_events,
             "usage": _usage(s.usage),
             "ms": round(s.elapsed_ms),
         }

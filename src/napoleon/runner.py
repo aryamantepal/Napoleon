@@ -24,11 +24,15 @@ def run_game(
 ) -> RunMetrics:
     """Run until the game ends or ``max_steps`` is hit. The run file is written either way."""
     agent.reset(seed)
+    attach = getattr(agent, "attach_run", None)
+    if attach is not None:
+        attach(Path(out))  # lets an agent keep files next to the run file
     snap = env.reset(scenario, seed)
     config = agent.config() if hasattr(agent, "config") else {}
     header = RunHeader(
         backend=backend, scenario=scenario, seed=seed, agent=agent.name, config=config
     )
+    observe = getattr(agent, "observe_result", None)
     reason = "done"
     records: list[StepRecord] = []
     overhead = None
@@ -42,9 +46,17 @@ def run_game(
             elapsed = (time.perf_counter() - start) * 1000
             records.append(
                 rec.record(
-                    snap, decision.action, result, decision.reasoning, elapsed, decision.usage
+                    snap,
+                    decision.action,
+                    result,
+                    decision.reasoning,
+                    elapsed,
+                    decision.usage,
+                    decision.events,
                 )
             )
+            if observe is not None:
+                observe(decision, result, nxt)
             snap = nxt
         else:
             reason = "step_limit"

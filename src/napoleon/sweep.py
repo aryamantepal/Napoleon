@@ -228,6 +228,8 @@ def summarize(rows: Sequence[RunRow]) -> list[dict]:
             "steps": round(mean(m.steps for m in ms), 1),
             "unfinished": sum(1 for r in rs if r.reason != "done"),
             "llm_calls": round(mean(m.llm_calls for m in ms), 1),
+            "actions_per_turn": round(mean(m.actions_per_turn for m in ms), 2),
+            "calls_per_turn": round(mean(m.calls_per_turn for m in ms), 2),
             "input_tokens": round(mean(m.input_tokens for m in ms)),
             "output_tokens": round(mean(m.output_tokens for m in ms)),
             "cost_usd": round(sum(m.cost_usd for m in ms), 6),
@@ -285,6 +287,8 @@ COLUMNS = [
     "steps",
     "unfinished",
     "llm_calls",
+    "actions_per_turn",
+    "calls_per_turn",
     "input_tokens",
     "output_tokens",
     "cost_usd",
@@ -346,7 +350,8 @@ def markdown(summary: Sequence[dict]) -> str:
         ("agent", "agent"), ("scenario", "scenario"), ("runs", "runs"),
         ("score_mean", "score"), ("score_sd", "sd"), ("cities", "cities"),
         ("techs", "techs"), ("illegal_rate", "illegal rate"), ("steps", "steps"),
-        ("llm_calls", "model calls"), ("cost_usd", "cost USD"),
+        ("llm_calls", "model calls"), ("actions_per_turn", "actions/turn"),
+        ("calls_per_turn", "calls/turn"), ("cost_usd", "cost USD"),
     ]  # fmt: skip
     lines = ["## Results", ""]
     lines += _table(

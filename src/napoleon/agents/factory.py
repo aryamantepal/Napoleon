@@ -19,6 +19,18 @@ OPTIONS: dict[str, tuple[str, ...]] = {
         "max_reflections",
     ),
     "voyager": ("max_retries", "max_tokens", "skills_path", "verify"),
+    "continual": (
+        "max_retries",
+        "max_tokens",
+        "max_tool_calls",
+        "schedule",
+        "rollback",
+        "limits",
+        "bootstrap_from",
+        "bootstrap_update",
+        "harness_dir",
+        "verify",
+    ),
 }
 
 
