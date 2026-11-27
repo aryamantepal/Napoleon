@@ -27,7 +27,9 @@ Rules of the game:
   skip), pick production for idle cities, and pick research and civics when asked.
 - Only the actions in the "Legal actions" list can succeed. Anything else is rejected and
   wastes a step.
-- end_turn finishes your turn. Unfinished business is not carried out for you.
+- end_turn finishes your turn, and the game does not advance until you end it. Once the
+  blockers are clear, do any clearly useful action, then end the turn. Switching production
+  or research back and forth, or moving units around without a purpose, wastes steps.
 
 There are exactly six actions, with exactly these fields:
 {"type":"move_unit","unit_id":<int>,"to":{"q":<int>,"r":<int>}}
