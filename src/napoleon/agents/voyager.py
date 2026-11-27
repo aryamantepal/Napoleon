@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from napoleon.agents.base import Decision
-from napoleon.agents.prompting import GAME_RULES, parse_reply, render_snapshot
+from napoleon.agents.prompting import GAME_RULES, parse_reply, render_snapshot, retry_note
 from napoleon.llm import LLMClient, clean_reply, extract_json, make_client
 from napoleon.schema import Action, Snapshot
 from napoleon.skills import (
@@ -178,10 +178,9 @@ class VoyagerAgent:
             if isinstance(outcome, _Chosen):
                 note = f"[after {attempt} retries] " if attempt else ""
                 return Decision(outcome.action, note + outcome.why, usage)
-            note = f"That reply was rejected: {outcome.error} Reply again."
             messages += [
                 {"role": "assistant", "content": reply.text},
-                {"role": "user", "content": note},
+                {"role": "user", "content": retry_note(outcome.error, snapshot)},
             ]
         why = f"unusable output after {self.max_retries + 1} attempts: {outcome.error}"
         return Decision(outcome.raw, why, usage)
