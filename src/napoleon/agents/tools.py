@@ -62,7 +62,8 @@ class SnapshotTools:
             raise ToolError(f"unknown tool {name!r}; tools are {', '.join(self._tools)}")
         if args is not None and not isinstance(args, dict):
             raise ToolError("args must be a JSON object")
-        return self._tools[name](args or {})
+        # Models often send null for arguments they mean to leave out.
+        return self._tools[name]({k: v for k, v in (args or {}).items() if v is not None})
 
     # Lookups --------------------------------------------------------------------
 

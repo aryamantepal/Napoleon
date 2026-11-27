@@ -181,3 +181,16 @@ def test_cli_runs_react_against_a_server(tmp_path, capsys):
     assert code == 0
     summary = json.loads(capsys.readouterr().out)
     assert summary["turns_played"] == 2 and summary["llm_calls"] == len(seen)
+
+
+def test_null_arguments_count_as_absent(snap):
+    unit = next(u for u in snap.units if u.type == "settler")
+    text = SnapshotTools(snap).run("list_options", {"unit_id": unit.id, "city_id": None})
+    assert "legal action(s)" in text
+
+
+def test_rejected_replies_come_back_with_a_format_example(snap):
+    client = ScriptedClient(["blah", commit({"type": "end_turn"})])
+    ReActAgent(client).act(snap)
+    note = client.calls[1][-1]["content"]
+    assert "no JSON object found" in note and "Actions look like this: {" in note

@@ -7,7 +7,14 @@ from collections import deque
 from dataclasses import dataclass
 
 from napoleon.agents.base import Decision
-from napoleon.agents.prompting import GAME_RULES, Reply, action_json, parse_reply, render_snapshot
+from napoleon.agents.prompting import (
+    GAME_RULES,
+    Reply,
+    action_json,
+    parse_reply,
+    render_snapshot,
+    retry_note,
+)
 from napoleon.agents.tools import TOOL_DOCS, SnapshotTools, ToolError
 from napoleon.llm import LLMClient, extract_json, make_client
 from napoleon.schema import Snapshot
@@ -125,8 +132,7 @@ class ReActAgent:
                 self.recent.append(f"turn {snapshot.turn}: {action_json(step.action)}")
                 return Decision(step.action, "\n".join(trace), usage)
             trace.append(f"Rejected reply: {step.error}")
-            note = f"That reply was rejected: {step.error}. Reply with one JSON object."
-            messages.append({"role": "user", "content": note})
+            messages.append({"role": "user", "content": retry_note(step.error, snapshot)})
         raw: dict | str = reply.raw if reply is not None else "no usable reply"
         trace.append(f"Gave up after {len(trace)} trace lines without a usable action")
         self.recent.append(f"turn {snapshot.turn}: (no usable action)")
