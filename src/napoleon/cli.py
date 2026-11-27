@@ -13,6 +13,35 @@ from napoleon.agents.factory import make_agent
 from napoleon.llm import API_KEY_ENV, DEFAULT_BASE_URL, DEFAULT_MODEL, LLMError
 
 
+def _add_llm_options(parser: argparse.ArgumentParser) -> None:
+    """Options for building an LLM agent, shared by ``run`` and ``sweep``."""
+    llm = parser.add_argument_group("LLM agents", "for any agent that talks to a model")
+    llm.add_argument("--model", default=None, help=f"default {DEFAULT_MODEL}")
+    llm.add_argument(
+        "--base-url",
+        default=None,
+        help=f"OpenAI-compatible endpoint (default {DEFAULT_BASE_URL}, Ollama)",
+    )
+    llm.add_argument(
+        "--api-key-env",
+        default=API_KEY_ENV,
+        metavar="NAME",
+        help=f"environment variable holding the API key, if the endpoint needs one "
+        f"(default {API_KEY_ENV})",
+    )
+    llm.add_argument("--temperature", type=float, default=0.2)
+    llm.add_argument("--max-retries", type=int, default=2, help="retries on unusable output")
+    llm.add_argument("--max-tokens", type=int, default=2048, help="per model call")
+    llm.add_argument("--max-inner-steps", type=int, default=None, help="react: lookups per step")
+    llm.add_argument("--no-think", action="store_true", help="append /no_think (Qwen3)")
+    llm.add_argument("--json-mode", action="store_true", help="send response_format=json_object")
+    llm.add_argument("--price-in", type=float, default=0.0, help="USD per million input tokens")
+    llm.add_argument("--price-out", type=float, default=0.0, help="USD per million output tokens")
+    llm.add_argument("--base", choices=["direct", "react"], default=None, help="reflexion: player")
+    llm.add_argument("--max-reflections", type=int, default=None, help="reflexion: lessons shown")
+    llm.add_argument("--no-verify", action="store_true", help="voyager: store skills untested")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="napoleon", description=__doc__)
     parser.add_argument("--version", action="version", version=f"napoleon {__version__}")
@@ -46,28 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--out", type=Path, default=None, help="run file (default runs/<agent>-<seed>.jsonl)"
     )
-    llm = run.add_argument_group("LLM agents", "for any agent that talks to a model")
-    llm.add_argument("--model", default=None, help=f"default {DEFAULT_MODEL}")
-    llm.add_argument(
-        "--base-url",
-        default=None,
-        help=f"OpenAI-compatible endpoint (default {DEFAULT_BASE_URL}, Ollama)",
-    )
-    llm.add_argument(
-        "--api-key-env",
-        default=API_KEY_ENV,
-        metavar="NAME",
-        help=f"environment variable holding the API key, if the endpoint needs one "
-        f"(default {API_KEY_ENV})",
-    )
-    llm.add_argument("--temperature", type=float, default=0.2)
-    llm.add_argument("--max-retries", type=int, default=2, help="retries on unusable output")
-    llm.add_argument("--max-tokens", type=int, default=2048, help="per model call")
-    llm.add_argument("--max-inner-steps", type=int, default=None, help="react: lookups per step")
-    llm.add_argument("--no-think", action="store_true", help="append /no_think (Qwen3)")
-    llm.add_argument("--json-mode", action="store_true", help="send response_format=json_object")
-    llm.add_argument("--price-in", type=float, default=0.0, help="USD per million input tokens")
-    llm.add_argument("--price-out", type=float, default=0.0, help="USD per million output tokens")
+    _add_llm_options(run)
 
     refl = run.add_argument_group("episodes and memory")
     refl.add_argument("--episodes", type=int, default=1, help="games to play in a row")
@@ -76,7 +84,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="episode N uses seed+N-1 (default: every episode replays the same seed)",
     )
-    refl.add_argument("--base", choices=["direct", "react"], default=None, help="reflexion: player")
     refl.add_argument(
         "--memory",
         type=Path,
@@ -86,7 +93,6 @@ def build_parser() -> argparse.ArgumentParser:
     refl.add_argument(
         "--clear-memory", action="store_true", help="reflexion: start with no lessons"
     )
-    refl.add_argument("--max-reflections", type=int, default=None, help="reflexion: lessons shown")
 
     sk = run.add_argument_group("skills")
     sk.add_argument(
@@ -96,7 +102,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="voyager: skill library file (default runs/skills/library.json)",
     )
     sk.add_argument("--clear-skills", action="store_true", help="voyager: start with no skills")
-    sk.add_argument("--no-verify", action="store_true", help="voyager: store skills untested")
+
+    sweep = sub.add_parser(
+        "sweep", help="run an agents x scenarios x seeds matrix and write comparison tables"
+    )
+    sweep.add_argument("--agents", nargs="+", choices=sorted(AGENTS), required=True)
+    sweep.add_argument("--scenarios", nargs="+", default=["default", "bad_opening"])
+    sweep.add_argument(
+        "--seeds", nargs="+", default=["0", "1", "2"], help="seeds, or ranges like 0-4"
+    )
+    sweep.add_argument("--turns", type=int, default=50)
+    sweep.add_argument("--out", type=Path, default=Path("runs/sweep"))
+    sweep.add_argument("--workers", type=int, default=1, help="cells to run in parallel threads")
+    sweep.add_argument(
+        "--episodes", type=int, default=1, help="games per cell (for learning agents)"
+    )
+    sweep.add_argument("--max-steps", type=int, default=100_000, help="per game")
+    sweep.add_argument(
+        "--resume", action="store_true", help="skip cells whose run files are already complete"
+    )
+    _add_llm_options(sweep)
+
+    report = sub.add_parser("report", help="aggregate the run files in a directory into tables")
+    report.add_argument("path", type=Path)
+    report.add_argument("--out", type=Path, default=None, help="default: the same directory")
 
     metrics = sub.add_parser("metrics", help="print metrics for a recorded run")
     metrics.add_argument("path", type=Path)
@@ -173,6 +202,14 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(json.dumps(_summary(m) | {"run_file": str(out)}, indent=2))
         return 0
+    if args.command == "sweep":
+        return _sweep(args)
+    if args.command == "report":
+        from napoleon.sweep import write_report
+
+        summary, out = write_report(args.path, args.out)
+        print((out / "summary.md").read_text(encoding="utf-8"))
+        return 0 if summary else 1
     if args.command == "metrics":
         from napoleon.metrics import compute_metrics
         from napoleon.recording import load_run
@@ -193,14 +230,11 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def build_agent(args: argparse.Namespace):
-    """Make the agent a ``run`` command asked for, with an LLM client where it needs one."""
-    if args.agent not in LLM_AGENTS:
-        return make_agent(args.agent)
+def build_client(args: argparse.Namespace):
     from napoleon.llm import make_client
     from napoleon.usage import Pricing
 
-    client = make_client(
+    return make_client(
         args.model,
         args.base_url,
         args.api_key_env,
@@ -209,23 +243,86 @@ def build_agent(args: argparse.Namespace):
         no_think=args.no_think,
         json_mode=args.json_mode,
     )
+
+
+def _agent_options(args: argparse.Namespace) -> dict:
+    return {
+        "max_retries": args.max_retries,
+        "max_tokens": args.max_tokens,
+        "max_inner_steps": args.max_inner_steps,
+        "base": args.base,
+        "max_reflections": args.max_reflections,
+        "verify": False if args.no_verify else None,
+    }
+
+
+def build_agent(args: argparse.Namespace):
+    """Make the agent a ``run`` command asked for, with an LLM client where it needs one."""
+    if args.agent not in LLM_AGENTS:
+        return make_agent(args.agent)
     agent = make_agent(
         args.agent,
-        client,
-        max_retries=args.max_retries,
-        max_tokens=args.max_tokens,
-        max_inner_steps=args.max_inner_steps,
-        base=args.base,
+        build_client(args),
         memory_path=args.memory,
-        max_reflections=args.max_reflections,
         skills_path=args.skills,
-        verify=False if args.no_verify else None,
+        **_agent_options(args),
     )
     if args.clear_memory and hasattr(agent, "memory"):
         agent.memory.clear()
     if args.clear_skills and hasattr(agent, "library"):
         agent.library.clear()
     return agent
+
+
+def _sweep(args: argparse.Namespace) -> int:
+    from napoleon.sweep import Cell, parse_seeds, run_sweep, write_report
+
+    out: Path = args.out
+    client = build_client(args) if LLM_AGENTS & set(args.agents) else None
+
+    def factory(cell: Cell):
+        # Learning agents get their own memory and skill files per cell, so cells never share
+        # lessons and can run in parallel.
+        tag = f"{cell.agent}-{cell.stem}"
+        agent = make_agent(
+            cell.agent,
+            client,
+            memory_path=out / "memory" / f"{tag}.jsonl",
+            skills_path=out / "skills" / f"{tag}.json",
+            **_agent_options(args),
+        )
+        if hasattr(agent, "memory"):
+            agent.memory.clear()
+        if hasattr(agent, "library"):
+            agent.library.clear()
+        return agent
+
+    def progress(result) -> None:
+        c = result.cell
+        state = (
+            "skipped" if result.skipped else f"error: {result.error}" if result.error else "done"
+        )
+        print(f"[{c.agent} {c.scenario} seed {c.seed}] {state}", file=sys.stderr)
+
+    results = run_sweep(
+        args.agents,
+        args.scenarios,
+        parse_seeds(args.seeds),
+        out,
+        factory,
+        turns=args.turns,
+        episodes=args.episodes,
+        workers=args.workers,
+        max_steps=args.max_steps,
+        resume=args.resume,
+        on_done=progress,
+    )
+    summary, _ = write_report(out)
+    print((out / "summary.md").read_text(encoding="utf-8"))
+    failed = [r for r in results if r.error]
+    for r in failed:
+        print(f"napoleon: {r.cell}: {r.error}", file=sys.stderr)
+    return 1 if failed or not summary else 0
 
 
 def _summary(m) -> dict:

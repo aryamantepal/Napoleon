@@ -17,6 +17,7 @@ Status: early. Everything runs on a small deterministic fake game. The civ6-mcp 
 - `napoleon.llm`: a one-method `LLMClient` protocol, an OpenAI-compatible HTTP client (Ollama, LM Studio, vLLM, llama.cpp, hosted Qwen), and a scripted client for tests. Agents ask for JSON and parse it leniently rather than rely on native tool calling.
 - `napoleon.skills`: the skill DSL, its safe interpreter, the JSON skill library with TF-IDF retrieval, and fake-game verification.
 - `napoleon.runner`: `run_game` for one game and `run_episodes` for several in a row with the same agent object, so whatever the agent keeps carries over.
+- `napoleon.sweep`: runs an agents x scenarios x seeds matrix on the fake game (optionally in parallel threads, resumable) and aggregates run files into `summary.csv`, `runs.csv` and `summary.md`: score, size, illegal-action rate, steps, model calls, tokens and cost, and recovery from the bad opening against the same agent's normal games.
 - `napoleon.usage`: token and cost accounting. Each step in a run file carries its usage, and metrics sum it.
 - `napoleon.replay`: compact replay JSON and a self-contained HTML page per run ([format](docs/replay-format.md)).
 - `napoleon.civ6`: `Civ6Backend` over civ6-mcp's game state, a live connection, and a scripted stand-in for tests.
@@ -34,6 +35,8 @@ napoleon run --agent react --turns 20              # same flags as direct
 napoleon run --agent reflexion --base react --episodes 3 --turns 30   # 3 games, learning between them
 napoleon run --agent voyager --episodes 3 --turns 30 --skills runs/skills/a.json --clear-skills
 napoleon run --agent reflexion --episodes 3 --vary-seed --clear-memory --memory runs/memory/a.jsonl
+napoleon sweep --agents random greedy direct react --seeds 0-4 --turns 50 --workers 4 --out runs/sweep
+napoleon report runs/sweep                          # re-aggregate existing run files
 napoleon run --backend civ6-scripted --turns 15
 napoleon run --backend civ6 --save default=napoleon_default   # needs Civ VI open
 ```
