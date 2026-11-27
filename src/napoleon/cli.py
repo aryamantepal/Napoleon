@@ -38,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--seed", type=int, default=0)
     run.add_argument("--turns", type=int, default=100)
     run.add_argument(
+        "--max-steps",
+        type=int,
+        default=100_000,
+        help="stop after this many steps even if the game is not over (default: no limit)",
+    )
+    run.add_argument(
         "--out", type=Path, default=None, help="run file (default runs/<agent>-<seed>.jsonl)"
     )
     llm = run.add_argument_group("LLM agents", "for any agent that talks to a model")
@@ -140,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
                     stem=out.stem,
                     scenario=args.scenario,
                     seeds=seeds,
+                    max_steps=args.max_steps,
                 )
                 rows = [
                     _summary(m)
@@ -153,7 +160,13 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps({"episodes": rows}, indent=2))
                 return 0
             m = run_game(
-                env, agent, out, backend=args.backend, scenario=args.scenario, seed=args.seed
+                env,
+                agent,
+                out,
+                backend=args.backend,
+                scenario=args.scenario,
+                seed=args.seed,
+                max_steps=args.max_steps,
             )
         except LLMError as exc:
             print(f"napoleon: {exc}", file=sys.stderr)
