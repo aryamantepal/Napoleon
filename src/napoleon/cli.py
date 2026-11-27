@@ -223,7 +223,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "compare":
         from napoleon.replay import write_compare
 
-        data = write_compare(args.paths, args.html)
+        try:
+            data = write_compare(args.paths, args.html)
+        except ValueError as exc:  # a run with no snapshots, or a file that is not a run
+            print(f"napoleon: {exc}", file=sys.stderr)
+            return 2
         print(json.dumps({"runs": len(data["runs"]), "html": str(args.html)}))
         return 0
     if args.command == "replay":

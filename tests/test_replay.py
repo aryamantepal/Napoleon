@@ -203,3 +203,13 @@ def test_compare_page_overlays_runs(tmp_path, llm_run, capsys):
     labels = [r["label"] for r in data["runs"]]
     assert labels == ["greedy · default seed 0", "direct (stub-1) · default seed 0"]
     assert data["runs"][1]["totals"]["cost_usd"] > 0 and data["runs"][0]["totals"]["llm_calls"] == 0
+
+
+def test_compare_reports_a_run_with_nothing_in_it(tmp_path, capsys):
+    from napoleon.recording import Recorder, RunHeader
+
+    empty = tmp_path / "empty.jsonl"
+    with Recorder(empty, RunHeader(backend="fake", scenario="default", seed=0, agent="x")):
+        pass
+    code = main(["compare", str(empty), "--html", str(tmp_path / "c.html")])
+    assert code == 2 and "no snapshots" in capsys.readouterr().err
