@@ -28,6 +28,14 @@ Rules of the game:
 - Only the actions in the "Legal actions" list can succeed. Anything else is rejected and
   wastes a step.
 - end_turn finishes your turn. Unfinished business is not carried out for you.
+
+There are exactly six actions, with exactly these fields:
+{"type":"move_unit","unit_id":<int>,"to":{"q":<int>,"r":<int>}}
+{"type":"unit_command","unit_id":<int>,"command":"fortify" | "skip" | "found_city"}
+{"type":"set_production","city_id":<int>,"item":"<item name>"}
+{"type":"set_research","tech":"<tech name>"}
+{"type":"set_civic","civic":"<civic name>"}
+{"type":"end_turn"}
 """
 
 ACTION_FORMAT = """\

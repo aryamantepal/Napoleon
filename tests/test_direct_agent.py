@@ -204,3 +204,17 @@ def test_retry_note_shows_a_real_action_as_a_format_example():
     note = client.calls[1][-1]["content"]
     assert "rejected: no JSON object found" in note
     assert json.dumps(s.legal_actions[0].model_dump(mode="json"), separators=(",", ":")) in note
+
+
+def test_every_action_type_is_described_in_the_rules():
+    from napoleon.agents.prompting import GAME_RULES
+
+    for name in (
+        "move_unit",
+        "unit_command",
+        "set_production",
+        "set_research",
+        "set_civic",
+        "end_turn",
+    ):
+        assert f'{{"type":"{name}"' in GAME_RULES
