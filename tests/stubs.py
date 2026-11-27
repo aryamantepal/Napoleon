@@ -77,3 +77,24 @@ def chat_server(reply: Callable[[list[dict]], str], status: int = 200):
     finally:
         server.shutdown()
         server.server_close()
+
+
+class ReactPlayer:
+    """A stand-in ReAct model: list the options once, then commit like ``PickLegal``."""
+
+    def __init__(self) -> None:
+        self.turn = None
+        self.tried: set[str] = set()
+
+    def __call__(self, messages: list[dict]) -> str:
+        last = messages[-1]["content"]
+        if not last.startswith("Observation"):
+            turn = next(ln for ln in messages[1]["content"].splitlines() if ln.startswith("Turn "))
+            if turn != self.turn:
+                self.turn, self.tried = turn, set()
+            return json.dumps({"thought": "look", "tool": "list_options", "args": {}})
+        lines = [ln for ln in last.splitlines() if ln.startswith('{"type"')]
+        fresh = [ln for ln in lines if ln not in self.tried] or lines
+        choice = END_TURN if END_TURN in lines else fresh[0]
+        self.tried.add(choice)
+        return json.dumps({"thought": "pick", "action": json.loads(choice)})

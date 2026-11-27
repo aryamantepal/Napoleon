@@ -13,7 +13,7 @@ Status: early. Everything runs on a small deterministic fake game. The civ6-mcp 
 - `napoleon.fake.FakeCivGame`: a fogged hex map, settlers, warriors, cities, production, tech and civic trees, turn blockers, barbarians, simple combat and an expanding rival. Scenarios: `default` and `bad_opening`.
 - `napoleon.recording`: JSONL run files with every step, the agent's reasoning, and a full snapshot per turn.
 - `napoleon.metrics`: score, cities, population and techs over turns, illegal-action rate, and recovery from a bad opening.
-- `napoleon.agents`: `random` and `greedy` sanity agents, and the LLM agents: `direct`, a stateless policy that sees one snapshot and answers with one JSON action.
+- `napoleon.agents`: `random` and `greedy` sanity agents, and the LLM agents. `direct` is a stateless policy: one snapshot in, one JSON action out. `react` first looks things up with read-only tools (`inspect_tile`, `inspect_unit`, `inspect_city`, `list_options`, `find_city_sites`, `threats`), up to a bounded number of lookups, then commits one action, and keeps a short log of its own recent actions. Its whole thought and lookup trace is stored as the step's reasoning.
 - `napoleon.llm`: a one-method `LLMClient` protocol, an OpenAI-compatible HTTP client (Ollama, LM Studio, vLLM, llama.cpp, hosted Qwen), and a scripted client for tests. Agents ask for JSON and parse it leniently rather than rely on native tool calling.
 - `napoleon.usage`: token and cost accounting. Each step in a run file carries its usage, and metrics sum it.
 - `napoleon.replay`: compact replay JSON and a self-contained HTML page per run ([format](docs/replay-format.md)).
@@ -28,6 +28,7 @@ napoleon metrics runs/fake-greedy-default-0.jsonl
 napoleon replay runs/fake-greedy-default-0.jsonl   # writes .replay.json and .replay.html
 napoleon run --agent direct --turns 20             # Ollama on localhost, model qwen3:8b
 napoleon run --agent direct --model qwen2.5:7b-instruct --base-url http://localhost:1234/v1
+napoleon run --agent react --turns 20              # same flags as direct
 napoleon run --backend civ6-scripted --turns 15
 napoleon run --backend civ6 --save default=napoleon_default   # needs Civ VI open
 ```

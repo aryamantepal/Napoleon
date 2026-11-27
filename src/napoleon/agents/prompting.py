@@ -57,7 +57,16 @@ def action_json(a: BaseModel) -> str:
     return json.dumps(a.model_dump(mode="json"), separators=(",", ":"))
 
 
-def render_snapshot(snap: Snapshot, *, max_legal: int = 300, tile_radius: int = 2) -> str:
+def render_snapshot(
+    snap: Snapshot,
+    *,
+    max_legal: int = 300,
+    tile_radius: int = 2,
+    tiles: bool = True,
+    legal: bool = True,
+) -> str:
+    """The snapshot as text. ``tiles=False`` and ``legal=False`` leave those out, for agents
+    that look them up through tools instead (the legal list is then summarized by count)."""
     me = snap.player.id
     lines = [
         f"Turn {snap.turn} of {snap.max_turns}.",
@@ -119,7 +128,7 @@ def render_snapshot(snap: Snapshot, *, max_legal: int = 300, tile_radius: int = 
 
     anchors = [c.coord for c in snap.cities if c.owner == me] + [u.coord for u in mine]
     near = [t for t in snap.tiles if any(distance(t.coord, a) <= tile_radius for a in anchors)]
-    if near:
+    if near and tiles:
         lines.append(f"Known tiles within {tile_radius} of your cities and units:")
         for t in near[:80]:
             extra = "".join(
@@ -133,11 +142,20 @@ def render_snapshot(snap: Snapshot, *, max_legal: int = 300, tile_radius: int = 
             )
             lines.append(f"- ({t.coord.q},{t.coord.r}) {t.terrain}{extra}")
 
-    legal = snap.legal_actions[:max_legal]
+    if not legal:
+        counts: dict[str, int] = {}
+        for a in snap.legal_actions:
+            counts[a.type] = counts.get(a.type, 0) + 1
+        summary = ", ".join(f"{k} {v}" for k, v in counts.items())
+        lines.append(
+            f"Legal actions: {len(snap.legal_actions)} ({summary}). Use list_options to see them."
+        )
+        return "\n".join(lines)
+    shown = snap.legal_actions[:max_legal]
     lines.append(f"Legal actions ({len(snap.legal_actions)}):")
-    lines += [action_json(a) for a in legal]
-    if len(legal) < len(snap.legal_actions):
-        lines.append(f"... {len(snap.legal_actions) - len(legal)} more not shown")
+    lines += [action_json(a) for a in shown]
+    if len(shown) < len(snap.legal_actions):
+        lines.append(f"... {len(snap.legal_actions) - len(shown)} more not shown")
     return "\n".join(lines)
 
 
