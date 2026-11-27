@@ -7,7 +7,7 @@ from statistics import median
 from pydantic import BaseModel
 
 from napoleon.recording import Run
-from napoleon.usage import total_usage
+from napoleon.usage import Usage, total_usage
 
 Series = list[tuple[int, float]]
 
@@ -38,6 +38,8 @@ def compute_metrics(run: Run) -> RunMetrics:
     failed = sum(1 for s in run.steps if not s.result.ok)
     final = snaps[-1]
     usage = total_usage([s.usage for s in run.steps])
+    if run.footer is not None:
+        usage = usage + (run.footer.overhead_usage or Usage())
     return RunMetrics(
         turns_played=final.turn - snaps[0].turn,
         steps=len(run.steps),

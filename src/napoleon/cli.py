@@ -9,6 +9,7 @@ from pathlib import Path
 
 from napoleon import __version__
 from napoleon.agents import AGENTS, LLM_AGENTS
+from napoleon.agents.factory import make_agent
 from napoleon.llm import API_KEY_ENV, DEFAULT_BASE_URL, DEFAULT_MODEL, LLMError
 
 
@@ -56,10 +57,30 @@ def build_parser() -> argparse.ArgumentParser:
     llm.add_argument("--temperature", type=float, default=0.2)
     llm.add_argument("--max-retries", type=int, default=2, help="retries on unusable output")
     llm.add_argument("--max-tokens", type=int, default=2048, help="per model call")
+    llm.add_argument("--max-inner-steps", type=int, default=None, help="react: lookups per step")
     llm.add_argument("--no-think", action="store_true", help="append /no_think (Qwen3)")
     llm.add_argument("--json-mode", action="store_true", help="send response_format=json_object")
     llm.add_argument("--price-in", type=float, default=0.0, help="USD per million input tokens")
     llm.add_argument("--price-out", type=float, default=0.0, help="USD per million output tokens")
+
+    refl = run.add_argument_group("episodes and memory")
+    refl.add_argument("--episodes", type=int, default=1, help="games to play in a row")
+    refl.add_argument(
+        "--vary-seed",
+        action="store_true",
+        help="episode N uses seed+N-1 (default: every episode replays the same seed)",
+    )
+    refl.add_argument("--base", choices=["direct", "react"], default=None, help="reflexion: player")
+    refl.add_argument(
+        "--memory",
+        type=Path,
+        default=None,
+        help="reflexion: reflection file (default runs/memory/reflexion.jsonl)",
+    )
+    refl.add_argument(
+        "--clear-memory", action="store_true", help="reflexion: start with no lessons"
+    )
+    refl.add_argument("--max-reflections", type=int, default=None, help="reflexion: lessons shown")
 
     metrics = sub.add_parser("metrics", help="print metrics for a recorded run")
     metrics.add_argument("path", type=Path)
@@ -77,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run":
         from napoleon.env import CivEnv
         from napoleon.fake import FakeCivGame
-        from napoleon.runner import run_game
+        from napoleon.runner import run_episodes, run_game
 
         name = f"{args.backend}-{args.agent}-{args.scenario}-{args.seed}.jsonl"
         out = args.out or Path("runs") / name
@@ -98,13 +119,31 @@ def main(argv: list[str] | None = None) -> int:
                 backend = Civ6Backend(ScriptedSource(), saves, max_turns=args.turns)
         env = CivEnv(backend)
         try:
+            agent = build_agent(args)
+            if args.episodes > 1:
+                seeds = [args.seed + (i if args.vary_seed else 0) for i in range(args.episodes)]
+                results = run_episodes(
+                    env,
+                    agent,
+                    out.parent,
+                    backend=args.backend,
+                    stem=out.stem,
+                    scenario=args.scenario,
+                    seeds=seeds,
+                )
+                rows = [
+                    _summary(m)
+                    | {
+                        "episode": n,
+                        "seed": s,
+                        "run_file": str(out.parent / f"{out.stem}-ep{n}.jsonl"),
+                    }
+                    for n, (m, s) in enumerate(zip(results, seeds, strict=True), 1)
+                ]
+                print(json.dumps({"episodes": rows}, indent=2))
+                return 0
             m = run_game(
-                env,
-                build_agent(args),
-                out,
-                backend=args.backend,
-                scenario=args.scenario,
-                seed=args.seed,
+                env, agent, out, backend=args.backend, scenario=args.scenario, seed=args.seed
             )
         except LLMError as exc:
             print(f"napoleon: {exc}", file=sys.stderr)
@@ -134,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
 def build_agent(args: argparse.Namespace):
     """Make the agent a ``run`` command asked for, with an LLM client where it needs one."""
     if args.agent not in LLM_AGENTS:
-        return AGENTS[args.agent]()
+        return make_agent(args.agent)
     from napoleon.llm import make_client
     from napoleon.usage import Pricing
 
@@ -147,9 +186,19 @@ def build_agent(args: argparse.Namespace):
         no_think=args.no_think,
         json_mode=args.json_mode,
     )
-    return AGENTS[args.agent](
-        client=client, max_retries=args.max_retries, max_tokens=args.max_tokens
+    agent = make_agent(
+        args.agent,
+        client,
+        max_retries=args.max_retries,
+        max_tokens=args.max_tokens,
+        max_inner_steps=args.max_inner_steps,
+        base=args.base,
+        memory_path=args.memory,
+        max_reflections=args.max_reflections,
     )
+    if args.clear_memory and hasattr(agent, "memory"):
+        agent.memory.clear()
+    return agent
 
 
 def _summary(m) -> dict:
