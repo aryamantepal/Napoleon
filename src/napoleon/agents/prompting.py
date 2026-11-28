@@ -45,7 +45,19 @@ Choose exactly one action. Reply with one JSON object and nothing else:
 {"reasoning": "<one or two sentences>", "action": <one entry copied from the legal actions>}
 """
 
+ACTION_FORMAT_NO_COT = """\
+Choose exactly one action. Reply with one JSON object and nothing else:
+{"action": <one entry copied from the legal actions>}
+"""
+
+# For agents whose reply format has a thought or reasoning field: switch it off.
+NO_COT_NOTE = (
+    'Do not explain your choice. Leave out the "thought" and "reasoning" fields and reply '
+    "with the action (or tool call) only."
+)
+
 SYSTEM_PROMPT = GAME_RULES + "\n" + ACTION_FORMAT
+SYSTEM_PROMPT_NO_COT = GAME_RULES + "\n" + ACTION_FORMAT_NO_COT
 
 
 def _yields(y: Yields) -> str:

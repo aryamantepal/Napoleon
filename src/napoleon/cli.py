@@ -38,6 +38,21 @@ def _add_llm_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="turn off Qwen3 thinking (reasoning_effort none, plus /no_think)",
     )
+    llm.add_argument(
+        "--cot",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="ask for a short reasoning before the action (default); --no-cot asks for the "
+        "action alone. Unrelated to --no-think, which controls the model's own thinking.",
+    )
+    llm.add_argument(
+        "--demos",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="few-shot demonstrations (JSONL from `napoleon demos`); default: greedy play "
+        "on fake-game seeds 1000+",
+    )
     llm.add_argument("--json-mode", action="store_true", help="send response_format=json_object")
     llm.add_argument("--price-in", type=float, default=0.0, help="USD per million input tokens")
     llm.add_argument("--price-out", type=float, default=0.0, help="USD per million output tokens")
@@ -108,6 +123,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--out", type=Path, default=None, help="run file (default runs/<agent>-<seed>.jsonl)"
     )
     _add_llm_options(run)
+    run.add_argument(
+        "--shots", type=int, default=0, help="few-shot demonstrations per prompt (0 = zero-shot)"
+    )
 
     refl = run.add_argument_group("episodes and memory")
     refl.add_argument("--episodes", type=int, default=1, help="games to play in a row")
@@ -154,6 +172,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--resume", action="store_true", help="skip cells whose run files are already complete"
     )
     _add_llm_options(sweep)
+    sweep.add_argument(
+        "--shots",
+        nargs="+",
+        type=int,
+        default=[0],
+        help="few-shot counts to compare, for example 0 3 (LLM agents only)",
+    )
+
+    demos = sub.add_parser(
+        "demos", help="write a few-shot demonstration file from greedy play or recorded runs"
+    )
+    demos.add_argument("--out", type=Path, required=True)
+    demos.add_argument(
+        "--from",
+        dest="sources",
+        type=Path,
+        nargs="*",
+        default=[],
+        help="finished fake-game run files to replay (default: roll greedy out on --seeds)",
+    )
+    demos.add_argument("--seeds", nargs="+", default=["1000-1005"], help="for the greedy rollout")
+    demos.add_argument("--turns", type=int, default=40)
 
     report = sub.add_parser("report", help="aggregate the run files in a directory into tables")
     report.add_argument("path", type=Path)
@@ -240,6 +280,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "sweep":
         return _sweep(args)
+    if args.command == "demos":
+        from napoleon.fewshot import DEMO_SCENARIOS, demos_from_run, greedy_demos, save_demos
+        from napoleon.sweep import parse_seeds
+
+        if args.sources:
+            found = [d for p in args.sources for d in demos_from_run(p)]
+        else:
+            found = greedy_demos(parse_seeds(args.seeds), DEMO_SCENARIOS, args.turns)
+        save_demos(found, args.out)
+        print(json.dumps({"demos": len(found), "out": str(args.out)}))
+        return 0
     if args.command == "report":
         from napoleon.sweep import write_report
 
@@ -320,6 +371,9 @@ def _agent_options(args: argparse.Namespace) -> dict:
         **_continual_options(args),
         "max_retries": args.max_retries,
         "max_tokens": args.max_tokens,
+        "cot": args.cot,
+        "demos": args.demos,
+        "shots": args.shots if isinstance(args.shots, int) else None,
         "max_inner_steps": args.max_inner_steps,
         "base": args.base,
         "max_reflections": args.max_reflections,
@@ -354,13 +408,13 @@ def _sweep(args: argparse.Namespace) -> int:
     def factory(cell: Cell):
         # Learning agents get their own memory and skill files per cell, so cells never share
         # lessons and can run in parallel.
-        tag = f"{cell.agent}-{cell.stem}"
+        tag = f"{cell.agent}-{cell.stem}"  # the stem carries scenario, seed and shots
         agent = make_agent(
             cell.agent,
             client,
             memory_path=out / "memory" / f"{tag}.jsonl",
             skills_path=out / "skills" / f"{tag}.json",
-            **_agent_options(args),
+            **{**_agent_options(args), "shots": cell.shots},
         )
         if hasattr(agent, "memory"):
             agent.memory.clear()
@@ -373,7 +427,7 @@ def _sweep(args: argparse.Namespace) -> int:
         state = (
             "skipped" if result.skipped else f"error: {result.error}" if result.error else "done"
         )
-        print(f"[{c.agent} {c.scenario} seed {c.seed}] {state}", file=sys.stderr)
+        print(f"[{c.agent} {c.scenario} seed {c.seed} shots {c.shots}] {state}", file=sys.stderr)
 
     results = run_sweep(
         args.agents,
@@ -387,6 +441,7 @@ def _sweep(args: argparse.Namespace) -> int:
         max_steps=args.max_steps,
         resume=args.resume,
         on_done=progress,
+        shots=args.shots,
     )
     summary, _ = write_report(out)
     print((out / "summary.md").read_text(encoding="utf-8"))

@@ -15,7 +15,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from napoleon.agents.base import Decision
-from napoleon.agents.prompting import GAME_RULES, parse_reply, render_snapshot, retry_note
+from napoleon.agents.prompting import (
+    GAME_RULES,
+    NO_COT_NOTE,
+    parse_reply,
+    render_snapshot,
+    retry_note,
+)
+from napoleon.fewshot import make_fewshot
 from napoleon.llm import LLMClient, clean_reply, extract_json, make_client
 from napoleon.schema import Action, Snapshot
 from napoleon.skills import (
@@ -121,8 +128,13 @@ class VoyagerAgent:
         retrieve_k: int = 4,
         verify: bool = True,
         verifier: Callable[[Skill, dict], Verification] | None = None,
+        shots: int = 0,
+        demos: str | None = None,
+        cot: bool = True,
     ) -> None:
         self._client = client
+        self.cot = cot
+        self.fewshot = make_fewshot(shots, demos, cot)
         self.library = SkillLibrary(skills_path, max_skills=max_skills)
         self.max_retries = max_retries
         self.max_tokens = max_tokens
@@ -148,12 +160,16 @@ class VoyagerAgent:
             "skills_path": str(self.library.path) if self.library.path else None,
             "skills_loaded": self.loaded,
             "verify": self.verify,
+            "cot": self.cot,
+            **(self.fewshot.config() if self.fewshot else {"shots": 0}),
         }
 
     def reset(self, seed: int) -> None:
         self.active = None
         self.created = self.reused = self.free_steps = 0
         self.loaded = len(self.library)
+        if self.fewshot:
+            self.fewshot.reset(seed)
 
     # Deciding -----------------------------------------------------------------------
 
@@ -166,8 +182,10 @@ class VoyagerAgent:
                 return Decision(action, f"[skill {name}, rule {run.last_rule}] no model call")
             self.active = None
 
+        shots = self.fewshot.messages(snapshot, "thought") if self.fewshot else []
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPT + ("" if self.cot else "\n" + NO_COT_NOTE)},
+            *shots,
             {"role": "user", "content": self._prompt(snapshot)},
         ]
         usage = Usage()

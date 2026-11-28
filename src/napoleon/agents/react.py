@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from napoleon.agents.base import Decision
 from napoleon.agents.prompting import (
     GAME_RULES,
+    NO_COT_NOTE,
     Reply,
     action_json,
     parse_reply,
@@ -16,6 +17,7 @@ from napoleon.agents.prompting import (
     retry_note,
 )
 from napoleon.agents.tools import TOOL_DOCS, SnapshotTools, ToolError
+from napoleon.fewshot import make_fewshot
 from napoleon.llm import LLMClient, extract_json, make_client
 from napoleon.schema import Snapshot
 from napoleon.usage import Usage
@@ -68,8 +70,13 @@ class ReActAgent:
         max_retries: int = 2,
         max_tokens: int = 1024,
         memory: int = 5,
+        shots: int = 0,
+        demos: str | None = None,
+        cot: bool = True,
     ) -> None:
         self._client = client
+        self.cot = cot
+        self.fewshot = make_fewshot(shots, demos, cot)
         self.max_inner_steps = max_inner_steps
         self.max_retries = max_retries
         self.max_tokens = max_tokens
@@ -88,18 +95,25 @@ class ReActAgent:
             "max_inner_steps": self.max_inner_steps,
             "max_retries": self.max_retries,
             "max_tokens": self.max_tokens,
+            "cot": self.cot,
+            **(self.fewshot.config() if self.fewshot else {"shots": 0}),
         }
 
     def reset(self, seed: int) -> None:
         self.recent.clear()
+        if self.fewshot:
+            self.fewshot.reset(seed)
 
     def act(self, snapshot: Snapshot) -> Decision:
         tools = SnapshotTools(snapshot)
         prompt = render_snapshot(snapshot, tiles=False, legal=False)
         if self.recent:
             prompt += "\nYour recent actions, oldest first:\n" + "\n".join(self.recent)
+        system = SYSTEM_PROMPT + ("" if self.cot else "\n" + NO_COT_NOTE) + self.lessons
+        shots = self.fewshot.messages(snapshot, "thought") if self.fewshot else []
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT + self.lessons},
+            {"role": "system", "content": system},
+            *shots,
             {"role": "user", "content": prompt},
         ]
         usage = Usage()

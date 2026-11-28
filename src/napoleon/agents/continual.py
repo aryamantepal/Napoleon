@@ -17,9 +17,10 @@ from typing import Any
 
 from napoleon import harness as hx
 from napoleon.agents.base import Decision
-from napoleon.agents.prompting import GAME_RULES, action_json, render_snapshot
+from napoleon.agents.prompting import GAME_RULES, NO_COT_NOTE, action_json, render_snapshot
 from napoleon.agents.react import ToolCall, parse_step
 from napoleon.agents.tools import TOOL_DOCS, SnapshotTools, ToolError
+from napoleon.fewshot import make_fewshot
 from napoleon.llm import LLMClient, clean_reply, extract_json, make_client
 from napoleon.refiner import Refiner, RollbackPolicy, Schedule, StepLog, clip, window_stats
 from napoleon.refiner import summarize as summarize_refinement
@@ -90,8 +91,13 @@ class ContinualAgent:
         verify: bool = True,
         verifier: hx.Verifier | None = None,
         refine_tokens: int = 1500,
+        shots: int = 0,
+        demos: str | None = None,
+        cot: bool = True,
     ) -> None:
         self._client = client
+        self.cot = cot
+        self.fewshot = make_fewshot(shots, demos, cot)
         self.max_retries = max_retries
         self.max_tokens = max_tokens
         self.max_tool_calls = max_tool_calls
@@ -145,6 +151,8 @@ class ContinualAgent:
             "rollback": self.rollback.model_dump(),
             "limits": self.limits.model_dump(),
             "harness_dir": str(self.dir) if self.dir else None,
+            "cot": self.cot,
+            **(self.fewshot.config() if self.fewshot else {"shots": 0}),
         }
 
     # Lifecycle ----------------------------------------------------------------------
@@ -156,6 +164,8 @@ class ContinualAgent:
         self._failures, self._last_skill = [], None
         self.refinements = self.rollbacks = self.free_steps = self.delegations = 0
         self.dir = self._dir_option
+        if self.fewshot:
+            self.fewshot.reset(seed)
         if self.dir is not None:
             self._persist("start")
 
@@ -208,11 +218,14 @@ class ContinualAgent:
                 self._last_skill = name
                 return _Out(action, why=f"[skill {name}, rule {run.last_rule}] no model call")
             self.active = None
+        note = "" if self.cot else f"\n{NO_COT_NOTE}"
+        shots = self.fewshot.messages(snap, "thought") if self.fewshot else []
         messages = [
             {
                 "role": "system",
-                "content": f"{FIXED_SYSTEM}\n# Strategy (editable)\n{self.h.prompt}",
+                "content": f"{FIXED_SYSTEM}{note}\n# Strategy (editable)\n{self.h.prompt}",
             },
+            *shots,
             {"role": "user", "content": self._prompt(snap)},
         ]
         return self._loop(

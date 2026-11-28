@@ -5,20 +5,24 @@ from __future__ import annotations
 from napoleon.agents import AGENTS, LLM_AGENTS
 from napoleon.llm import LLMClient
 
+# The prompting condition: few-shot demonstrations and whether to ask for reasoning.
+CONDITION = ("shots", "demos", "cot")
+
 # Options each LLM agent understands. Anything else in ``options`` is ignored, and ``None``
 # means "use the agent's default", so one options dict can serve every agent.
 OPTIONS: dict[str, tuple[str, ...]] = {
-    "direct": ("max_retries", "max_tokens"),
-    "react": ("max_retries", "max_tokens", "max_inner_steps"),
+    "direct": ("max_retries", "max_tokens", *CONDITION),
+    "react": ("max_retries", "max_tokens", "max_inner_steps", *CONDITION),
     "reflexion": (
         "max_retries",
         "max_tokens",
         "max_inner_steps",
+        *CONDITION,
         "base",
         "memory_path",
         "max_reflections",
     ),
-    "voyager": ("max_retries", "max_tokens", "skills_path", "verify"),
+    "voyager": ("max_retries", "max_tokens", "skills_path", "verify", *CONDITION),
     "continual": (
         "max_retries",
         "max_tokens",
@@ -30,6 +34,7 @@ OPTIONS: dict[str, tuple[str, ...]] = {
         "bootstrap_update",
         "harness_dir",
         "verify",
+        *CONDITION,
     ),
 }
 
