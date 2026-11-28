@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from napoleon.agents.base import Decision
-from napoleon.agents.prompting import direct_messages, parse_reply, retry_note
+from napoleon.agents.prompting import TurnLog, direct_messages, parse_reply, retry_note
 from napoleon.fewshot import make_fewshot
 from napoleon.llm import LLMClient, make_client
 from napoleon.schema import Snapshot
@@ -30,8 +30,10 @@ class DirectAgent:
         shots: int = 0,
         demos: str | None = None,
         cot: bool = True,
+        turn_log: bool = False,
     ) -> None:
         self._client = client
+        self.turn_log = TurnLog() if turn_log else None
         self.max_retries = max_retries
         self.max_tokens = max_tokens
         self.cot = cot
@@ -50,15 +52,20 @@ class DirectAgent:
             "max_retries": self.max_retries,
             "max_tokens": self.max_tokens,
             "cot": self.cot,
+            "turn_log": self.turn_log is not None,
             **(self.fewshot.config() if self.fewshot else {"shots": 0}),
         }
 
     def reset(self, seed: int) -> None:
+        if self.turn_log:
+            self.turn_log.reset()
         if self.fewshot:
             self.fewshot.reset(seed)
 
     def act(self, snapshot: Snapshot) -> Decision:
         messages = direct_messages(snapshot, self.cot, self.lessons)
+        if self.turn_log:
+            messages[-1]["content"] += self.turn_log.render(snapshot)
         if self.fewshot:
             messages[1:1] = self.fewshot.messages(snapshot)
         usage = Usage()
@@ -68,10 +75,16 @@ class DirectAgent:
             parsed = parse_reply(reply.text)
             if parsed.action is not None:
                 note = f"[after {attempt} retries] " if attempt else ""
+                self._log(snapshot, parsed.action)
                 return Decision(parsed.action, note + (parsed.reasoning or ""), usage)
             messages += [
                 {"role": "assistant", "content": reply.text},
                 {"role": "user", "content": retry_note(parsed.error, snapshot)},
             ]
         why = f"unusable output after {self.max_retries + 1} attempts: {parsed.error}"
+        self._log(snapshot, parsed.raw)
         return Decision(parsed.raw, why, usage)
+
+    def _log(self, snapshot: Snapshot, action: object) -> None:
+        if self.turn_log:
+            self.turn_log.note(snapshot, action)

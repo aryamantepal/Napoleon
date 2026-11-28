@@ -7,11 +7,13 @@ from napoleon.llm import LLMClient
 
 # The prompting condition: few-shot demonstrations and whether to ask for reasoning.
 CONDITION = ("shots", "demos", "cot")
+# Agents without memory can be shown their own moves this turn (off by default).
+STATELESS = ("turn_log",)
 
 # Options each LLM agent understands. Anything else in ``options`` is ignored, and ``None``
 # means "use the agent's default", so one options dict can serve every agent.
 OPTIONS: dict[str, tuple[str, ...]] = {
-    "direct": ("max_retries", "max_tokens", *CONDITION),
+    "direct": ("max_retries", "max_tokens", *CONDITION, *STATELESS),
     "react": ("max_retries", "max_tokens", "max_inner_steps", *CONDITION),
     "reflexion": (
         "max_retries",
@@ -22,7 +24,7 @@ OPTIONS: dict[str, tuple[str, ...]] = {
         "memory_path",
         "max_reflections",
     ),
-    "voyager": ("max_retries", "max_tokens", "skills_path", "verify", *CONDITION),
+    "voyager": ("max_retries", "max_tokens", "skills_path", "verify", *CONDITION, *STATELESS),
     "continual": (
         "max_retries",
         "max_tokens",
