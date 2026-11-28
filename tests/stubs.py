@@ -55,8 +55,9 @@ def chat_server(reply: Callable[[list[dict]], str], status: int = 200):
                 self.wfile.write(b'{"error": "boom"}')
                 return
             text = reply(body["messages"])
+            message = text if isinstance(text, dict) else {"role": "assistant", "content": text}
             payload = {
-                "choices": [{"message": {"role": "assistant", "content": text}}],
+                "choices": [{"message": message}],
                 "usage": {"prompt_tokens": 100, "completion_tokens": 20},
             }
             data = json.dumps(payload).encode()

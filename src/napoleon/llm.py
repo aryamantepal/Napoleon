@@ -108,7 +108,7 @@ class OpenAICompatClient:
         self.no_think = no_think
 
     def complete(self, messages: list[Message], *, max_tokens: int = 1024) -> LLMResponse:
-        if self.no_think and messages:  # Qwen3's soft switch for skipping its thinking phase
+        if self.no_think and messages:  # Qwen3's soft switch; Ollama's Qwen3 often ignores it
             messages = [
                 *messages[:-1],
                 {**messages[-1], "content": messages[-1]["content"] + " /no_think"},
@@ -120,6 +120,8 @@ class OpenAICompatClient:
             "temperature": self.temperature,
             "stream": False,
         }
+        if self.no_think:
+            body["reasoning_effort"] = "none"  # what actually turns thinking off on Ollama
         if self.json_mode:
             body["response_format"] = {"type": "json_object"}
         headers = {"Content-Type": "application/json"}
@@ -143,7 +145,12 @@ class OpenAICompatClient:
 
     def _parse(self, data: dict, messages: list[Message]) -> LLMResponse:
         try:
-            text = data["choices"][0]["message"].get("content") or ""
+            message = data["choices"][0]["message"]
+            text = message.get("content") or ""
+            if not text.strip():
+                # A thinking model that ran out of budget, or ignored the switch, can leave the
+                # answer in its reasoning field. Let the agent try to parse it from there.
+                text = message.get("reasoning") or message.get("reasoning_content") or ""
         except (KeyError, IndexError, TypeError, AttributeError) as exc:
             raise LLMError(f"unexpected response shape: {str(data)[:300]}") from exc
         raw = data.get("usage") or {}
