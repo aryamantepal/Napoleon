@@ -58,6 +58,16 @@ def _add_llm_options(parser: argparse.ArgumentParser) -> None:
     llm.add_argument("--price-out", type=float, default=0.0, help="USD per million output tokens")
     llm.add_argument("--base", choices=["direct", "react"], default=None, help="reflexion: player")
     llm.add_argument("--max-reflections", type=int, default=None, help="reflexion: lessons shown")
+    llm.add_argument(
+        "--checkpoint", type=Path, default=None, help="rl: policy file from `napoleon train`"
+    )
+    llm.add_argument(
+        "--sample",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="rl: sample actions from the policy, or --no-sample for argmax "
+        "(default: sample for ppo checkpoints, argmax for q)",
+    )
     llm.add_argument("--no-verify", action="store_true", help="voyager: store skills untested")
     cont = parser.add_argument_group("continual harness", "for --agent continual")
     cont.add_argument(
@@ -195,6 +205,23 @@ def build_parser() -> argparse.ArgumentParser:
     demos.add_argument("--seeds", nargs="+", default=["1000-1005"], help="for the greedy rollout")
     demos.add_argument("--turns", type=int, default=40)
 
+    train = sub.add_parser(
+        "train", help="train an RL policy on the fake game (numpy only; needs the [rl] extra)"
+    )
+    train.add_argument("--agent", choices=["ppo", "q"], default="ppo")
+    train.add_argument("--episodes", type=int, default=1000)
+    train.add_argument("--scenario", nargs="+", default=["default", "bad_opening"])
+    train.add_argument("--turns", type=int, default=30, help="game length while training")
+    train.add_argument("--eval-turns", type=int, default=50, help="game length for evaluation")
+    train.add_argument("--eval-seeds", nargs="+", default=["0-4"], help="held-out seeds")
+    train.add_argument("--eval-every", type=int, default=64, help="episodes between evaluations")
+    train.add_argument("--seed", type=int, default=0, help="initialisation and sampling seed")
+    train.add_argument("--hidden", type=int, default=32, help="ppo: hidden units; 0 is linear")
+    train.add_argument("--lr", type=float, default=None)
+    train.add_argument("--batch-episodes", type=int, default=16, help="ppo: games per update")
+    train.add_argument("--out", type=Path, default=Path("models/ppo.npz"))
+    train.add_argument("--curve", type=Path, default=None, help="default: <out>.curve.csv")
+
     report = sub.add_parser("report", help="aggregate the run files in a directory into tables")
     report.add_argument("path", type=Path)
     report.add_argument("--out", type=Path, default=None, help="default: the same directory")
@@ -280,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "sweep":
         return _sweep(args)
+    if args.command == "train":
+        return _train(args)
     if args.command == "demos":
         from napoleon.fewshot import DEMO_SCENARIOS, demos_from_run, greedy_demos, save_demos
         from napoleon.sweep import parse_seeds
@@ -375,6 +404,8 @@ def _agent_options(args: argparse.Namespace) -> dict:
         "demos": args.demos,
         "shots": args.shots if isinstance(args.shots, int) else None,
         "max_inner_steps": args.max_inner_steps,
+        "checkpoint": args.checkpoint,
+        "sample": args.sample,
         "base": args.base,
         "max_reflections": args.max_reflections,
         "verify": False if args.no_verify else None,
@@ -384,7 +415,7 @@ def _agent_options(args: argparse.Namespace) -> dict:
 def build_agent(args: argparse.Namespace):
     """Make the agent a ``run`` command asked for, with an LLM client where it needs one."""
     if args.agent not in LLM_AGENTS:
-        return make_agent(args.agent)
+        return make_agent(args.agent, checkpoint=args.checkpoint, sample=args.sample)
     agent = make_agent(
         args.agent,
         build_client(args),
@@ -397,6 +428,49 @@ def build_agent(args: argparse.Namespace):
     if args.clear_skills and hasattr(agent, "library"):
         agent.library.clear()
     return agent
+
+
+def _train(args: argparse.Namespace) -> int:
+    try:
+        from napoleon.rl.train import PPOConfig, train, write_curve
+    except ImportError:
+        print("napoleon: training needs numpy: pip install -e '.[rl]'", file=sys.stderr)
+        return 2
+    from napoleon.sweep import parse_seeds
+
+    cfg = PPOConfig(
+        hidden=args.hidden,
+        batch_episodes=args.batch_episodes,
+        **({"lr": args.lr} if args.lr else {}),
+    )
+    result = train(
+        args.agent,
+        args.episodes,
+        args.scenario,
+        turns=args.turns,
+        eval_turns=args.eval_turns,
+        eval_seeds=parse_seeds(args.eval_seeds),
+        eval_every=args.eval_every,
+        seed=args.seed,
+        cfg=cfg,
+        alpha=args.lr or 0.003,
+        log=lambda line: print(line, file=sys.stderr, flush=True),
+    )
+    meta = {
+        "kind": args.agent,
+        "episodes": args.episodes,
+        "seed": args.seed,
+        "scenarios": args.scenario,
+        "train_turns": args.turns,
+        "train_seed_base": 10_000,
+        "config": cfg.model_dump(),
+    }
+    result.policy.save(args.out, meta)
+    curve = args.curve or args.out.with_suffix(".curve.csv")
+    write_curve(result.curve, curve)
+    last = result.curve[-1]
+    print(json.dumps({"checkpoint": str(args.out), "curve": str(curve), "final": last}, indent=2))
+    return 0
 
 
 def _sweep(args: argparse.Namespace) -> int:

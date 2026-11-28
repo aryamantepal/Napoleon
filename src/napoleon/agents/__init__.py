@@ -7,6 +7,7 @@ from napoleon.agents.greedy import GreedyAgent
 from napoleon.agents.random_agent import RandomAgent
 from napoleon.agents.react import ReActAgent
 from napoleon.agents.reflexion import ReflexionAgent
+from napoleon.agents.rl import RLAgent
 from napoleon.agents.voyager import VoyagerAgent
 
 AGENTS: dict[str, type] = {
@@ -17,6 +18,7 @@ AGENTS: dict[str, type] = {
     "reflexion": ReflexionAgent,
     "voyager": VoyagerAgent,
     "continual": ContinualAgent,
+    "rl": RLAgent,
 }
 
 # Agents built around an LLM client; the rest take no arguments.
@@ -32,6 +34,7 @@ __all__ = [
     "GreedyAgent",
     "RandomAgent",
     "ReActAgent",
+    "RLAgent",
     "ReflexionAgent",
     "VoyagerAgent",
 ]

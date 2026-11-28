@@ -42,6 +42,12 @@ OPTIONS: dict[str, tuple[str, ...]] = {
 def make_agent(name: str, client: LLMClient | None = None, **options):
     if name not in AGENTS:
         raise ValueError(f"unknown agent {name!r}; choose from {sorted(AGENTS)}")
+    if name == "rl":
+        if options.get("checkpoint") is None:
+            raise ValueError("the rl agent needs a checkpoint: pass --checkpoint models/x.npz")
+        agent = AGENTS[name](options["checkpoint"], sample=options.get("sample"))
+        agent._load()  # fail now, on a bad file, not at the first move
+        return agent
     if name not in LLM_AGENTS:
         return AGENTS[name]()
     allowed = OPTIONS[name]
