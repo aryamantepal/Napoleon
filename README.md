@@ -50,7 +50,7 @@ LLM agents talk to any OpenAI-compatible endpoint. Defaults are Ollama at
 `NAPOLEON_LLM_MODEL` and `NAPOLEON_LLM_BASE_URL` environment variables. If the endpoint needs a
 key, put it in `NAPOLEON_LLM_API_KEY` (or name another variable with `--api-key-env`). Hosted
 models cost money: pass `--price-in` and `--price-out` (USD per million tokens) to have cost
-tracked; local models report tokens at zero cost. `--no-think` appends `/no_think` for Qwen3.
+tracked; local models report tokens at zero cost. `--no-think` turns off Qwen3 thinking: it sends `reasoning_effort: "none"` (what Ollama honors) and appends `/no_think`. If a reply has no content but a reasoning field, the agent parses the action out of that.
 Ollama's default context window is 4096 tokens, which truncates the prompt from the front once a game has many units and legal actions; start the server with a larger one (for example `OLLAMA_CONTEXT_LENGTH=16384 ollama serve`). Unusable output is retried (`--max-retries`, default 2), then sent to the game as a malformed
 action, which counts in the illegal-action rate.
 

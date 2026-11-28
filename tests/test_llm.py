@@ -83,6 +83,23 @@ def test_http_client_options():
     assert seen[0]["auth"] is None
     assert seen[0]["messages"][-1]["content"].endswith(" /no_think")
     assert seen[0]["response_format"] == {"type": "json_object"}
+    assert seen[0]["reasoning_effort"] == "none"
+
+
+def test_thinking_is_left_alone_unless_asked_to_stop():
+    with chat_server(lambda msgs: "ok") as (url, seen):
+        OpenAICompatClient("m", url).complete(MSGS)
+    assert "reasoning_effort" not in seen[0]
+
+
+def test_an_answer_left_in_the_reasoning_field_is_used():
+    reply = {"role": "assistant", "content": "", "reasoning": 'Thinking... {"type":"end_turn"}'}
+    with chat_server(lambda msgs: reply) as (url, _):
+        out = OpenAICompatClient("m", url).complete(MSGS)
+    assert extract_json(out.text) == {"type": "end_turn"}
+    both = {"role": "assistant", "content": "the answer", "reasoning": "ignored"}
+    with chat_server(lambda msgs: both) as (url, _):
+        assert OpenAICompatClient("m", url).complete(MSGS).text == "the answer"
 
 
 def test_http_client_errors_are_llm_errors():

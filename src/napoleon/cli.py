@@ -33,7 +33,11 @@ def _add_llm_options(parser: argparse.ArgumentParser) -> None:
     llm.add_argument("--max-retries", type=int, default=2, help="retries on unusable output")
     llm.add_argument("--max-tokens", type=int, default=2048, help="per model call")
     llm.add_argument("--max-inner-steps", type=int, default=None, help="react: lookups per step")
-    llm.add_argument("--no-think", action="store_true", help="append /no_think (Qwen3)")
+    llm.add_argument(
+        "--no-think",
+        action="store_true",
+        help="turn off Qwen3 thinking (reasoning_effort none, plus /no_think)",
+    )
     llm.add_argument("--json-mode", action="store_true", help="send response_format=json_object")
     llm.add_argument("--price-in", type=float, default=0.0, help="USD per million input tokens")
     llm.add_argument("--price-out", type=float, default=0.0, help="USD per million output tokens")
