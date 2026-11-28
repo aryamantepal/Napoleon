@@ -40,6 +40,23 @@ napoleon sweep --agents greedy rl --checkpoint models/ppo.npz --seeds 0-4 --turn
 
 The curve CSV has, per evaluation, the games trained so far, mean training return and score, the share of truncated games, and the greedy-style evaluation score per scenario on the held-out seeds (deterministic argmax policy, 50 turns).
 
+## Results
+
+`models/ppo.npz` (2,500 games of 50 turns, batch 32, about 4.5 minutes on an M-series laptop) and `models/q.npz` (2,000 games) are the checkpoints these numbers come from, with learning curves in `models/ppo.curve.csv` and `models/q.curve.csv`. Mean final score over 50-turn games, `napoleon sweep --turns 50`, training seeds 10000 and up so none of the games below were trained on:
+
+| agent | default | bad_opening | seeds |
+|---|---|---|---|
+| greedy | 36.6 (sd 4.7) | 21.8 (0.6) | 0-9 |
+| random | 28.4 (4.7) | 23.4 (4.3) | 0-9 |
+| ppo | 39.8 (5.9) | 22.0 (1.3) | 0-9 |
+| greedy | 35.4 (3.5) | 21.9 (0.5) | 10-29 |
+| ppo | 41.6 (6.6) | 22.4 (1.0) | 10-29 |
+| q (linear) | 21.4 (5.7) | 10.0 (0.0) | 0-9 |
+
+PPO beats greedy on the default scenario (about +6 points on 20 fresh seeds, a gap of roughly 3.7 standard errors) and ties it on `bad_opening`, with the same number of steps per turn. Random scores nearly as well on `bad_opening` because the score there barely depends on play. The linear Q-learner is unstable: its argmax policy loops on moves that look equally good and hits the step cap, so it is a baseline that fails, not a competitor. Seeds 0-9 were also the evaluation seeds in the training curve, but the final checkpoint was taken as is, not chosen by that curve, and seeds 10-29 are untouched.
+
+PPO is evaluated by sampling from the policy, as it was trained. Its argmax policy scores 19.6 (default) and 16.8 (bad_opening) on seeds 0-9 because it repeats moves; `--no-sample` shows this.
+
 ## Not built here
 
 Fine-tuning the LLM itself with RL (GRPO or LoRA, as in the paper's co-learning loop) is a follow-up, see the fine-tuning notes.
