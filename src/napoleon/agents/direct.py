@@ -3,13 +3,7 @@
 from __future__ import annotations
 
 from napoleon.agents.base import Decision
-from napoleon.agents.prompting import (
-    SYSTEM_PROMPT,
-    SYSTEM_PROMPT_NO_COT,
-    parse_reply,
-    render_snapshot,
-    retry_note,
-)
+from napoleon.agents.prompting import direct_messages, parse_reply, retry_note
 from napoleon.fewshot import make_fewshot
 from napoleon.llm import LLMClient, make_client
 from napoleon.schema import Snapshot
@@ -64,13 +58,9 @@ class DirectAgent:
             self.fewshot.reset(seed)
 
     def act(self, snapshot: Snapshot) -> Decision:
-        system = (SYSTEM_PROMPT if self.cot else SYSTEM_PROMPT_NO_COT) + self.lessons
-        shots = self.fewshot.messages(snapshot) if self.fewshot else []
-        messages = [
-            {"role": "system", "content": system},
-            *shots,
-            {"role": "user", "content": render_snapshot(snapshot)},
-        ]
+        messages = direct_messages(snapshot, self.cot, self.lessons)
+        if self.fewshot:
+            messages[1:1] = self.fewshot.messages(snapshot)
         usage = Usage()
         for attempt in range(self.max_retries + 1):
             reply = self.client.complete(messages, max_tokens=self.max_tokens)

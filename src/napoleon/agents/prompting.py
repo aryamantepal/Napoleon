@@ -171,6 +171,15 @@ def render_snapshot(
     return "\n".join(lines)
 
 
+def direct_messages(snap: Snapshot, cot: bool = True, lessons: str = "") -> list[dict[str, str]]:
+    """The exact system and user messages the direct agent sends for ``snap``."""
+    system = (SYSTEM_PROMPT if cot else SYSTEM_PROMPT_NO_COT) + lessons
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": render_snapshot(snap)},
+    ]
+
+
 @dataclass(frozen=True)
 class Reply:
     """A parsed model reply. ``action`` is ``None`` when the reply could not be used."""

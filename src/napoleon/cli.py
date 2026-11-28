@@ -222,6 +222,80 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--out", type=Path, default=Path("models/ppo.npz"))
     train.add_argument("--curve", type=Path, default=None, help="default: <out>.curve.csv")
 
+    ft = sub.add_parser(
+        "finetune", help="LoRA-tune a small local model with MLX: sft, dagger, eval, data"
+    )
+    fsub = ft.add_subparsers(dest="finetune_command", required=True)
+
+    def student_options(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--model", default=None, help="MLX model (default mlx-community/Qwen3-1.7B-4bit)"
+        )
+        p.add_argument(
+            "--no-cot", dest="cot", action="store_false", help="targets without reasoning"
+        )
+        p.add_argument("--iters", type=int, default=None, help="LoRA training iterations")
+        p.add_argument("--batch-size", type=int, default=None)
+        p.add_argument("--lr", type=float, default=None, help="LoRA learning rate")
+        p.add_argument("--num-layers", type=int, default=None, help="layers given LoRA adapters")
+        p.add_argument("--max-seq-length", type=int, default=None)
+
+    def teacher_options(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--teacher", choices=["greedy", "llm"], default="greedy")
+        p.add_argument("--teacher-model", default="qwen3.8:27b-mlx", help="llm teacher, on Ollama")
+        p.add_argument("--teacher-base-url", default=None, help=f"default {DEFAULT_BASE_URL}")
+
+    f_data = fsub.add_parser("data", help="write chat-format train/valid JSONL, no training")
+    f_data.add_argument("--out", type=Path, required=True)
+    f_data.add_argument("--from", dest="sources", type=Path, nargs="*", default=[])
+    f_data.add_argument("--seeds", nargs="+", default=["2000-2007"])
+    f_data.add_argument("--turns", type=int, default=40)
+    f_data.add_argument("--no-cot", dest="cot", action="store_false")
+    teacher_options(f_data)
+
+    f_sft = fsub.add_parser("sft", help="supervised fine-tuning (behavior cloning from a teacher)")
+    f_sft.add_argument(
+        "--from",
+        dest="sources",
+        type=Path,
+        nargs="*",
+        default=[],
+        help="finished fake-game run files to learn from (default: fresh greedy games)",
+    )
+    f_sft.add_argument("--out", type=Path, required=True, help="adapter directory")
+    f_sft.add_argument(
+        "--seeds", nargs="+", default=["2000-2007"], help="seeds for fresh greedy games"
+    )
+    f_sft.add_argument("--turns", type=int, default=40)
+    f_sft.add_argument("--dry-run", action="store_true", help="build the data, print the command")
+    student_options(f_sft)
+    teacher_options(f_sft)
+
+    f_dag = fsub.add_parser("dagger", help="roll out the student, relabel bad windows, soft SFT")
+    f_dag.add_argument("--out", type=Path, required=True)
+    f_dag.add_argument(
+        "--adapter", type=Path, default=None, help="start from this adapter (an sft result)"
+    )
+    f_dag.add_argument("--iterations", type=int, default=3)
+    f_dag.add_argument("--steps-per-iter", type=int, default=48)
+    f_dag.add_argument("--window", type=int, default=8, help="steps per scored window")
+    f_dag.add_argument(
+        "--bad-below", type=float, default=0.75, help="relabel windows scoring below"
+    )
+    f_dag.add_argument("--turns", type=int, default=30)
+    student_options(f_dag)
+    teacher_options(f_dag)
+
+    f_eval = fsub.add_parser("eval", help="score a student on held-out seeds")
+    f_eval.add_argument("--adapter", type=Path, default=None, help="omit for the base model")
+    f_eval.add_argument("--scenarios", nargs="+", default=["default"])
+    f_eval.add_argument("--seeds", nargs="+", default=["0-1"])
+    f_eval.add_argument("--turns", type=int, default=12)
+    f_eval.add_argument("--max-steps", type=int, default=120)
+    f_eval.add_argument("--out", type=Path, default=Path("runs/finetune-eval"))
+    f_eval.add_argument("--label", default=None)
+    student_options(f_eval)
+
     report = sub.add_parser("report", help="aggregate the run files in a directory into tables")
     report.add_argument("path", type=Path)
     report.add_argument("--out", type=Path, default=None, help="default: the same directory")
@@ -309,6 +383,10 @@ def main(argv: list[str] | None = None) -> int:
         return _sweep(args)
     if args.command == "train":
         return _train(args)
+    if args.command == "finetune":
+        from napoleon.finetune.cli import run as finetune_run
+
+        return finetune_run(args)
     if args.command == "demos":
         from napoleon.fewshot import DEMO_SCENARIOS, demos_from_run, greedy_demos, save_demos
         from napoleon.sweep import parse_seeds

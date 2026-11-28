@@ -14,6 +14,8 @@ dependencies = ["pydantic>=2.6"]
 dev = ["pytest>=8", "ruff>=0.6"]
 # The rl agent and `napoleon train`: numpy only, no torch.
 rl = ["numpy>=1.26"]
+# LoRA fine-tuning and local serving of a small student model. Apple silicon only.
+mlx = ["mlx-lm>=0.20 ; sys_platform == 'darwin' and platform_machine == 'arm64'"]
 # Real Civ VI. Pinned to the civ6-mcp commit the backend was checked against.
 civ6 = ["civ6-mcp @ git+https://github.com/lmwilki/civ6-mcp@dd20190 ; python_version >= '3.12'"]
 
