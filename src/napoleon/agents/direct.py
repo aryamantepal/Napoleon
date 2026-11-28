@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from napoleon.agents.base import Decision
-from napoleon.agents.prompting import SYSTEM_PROMPT, parse_reply, render_snapshot, retry_note
+from napoleon.agents.prompting import (
+    SYSTEM_PROMPT,
+    SYSTEM_PROMPT_NO_COT,
+    parse_reply,
+    render_snapshot,
+    retry_note,
+)
+from napoleon.fewshot import make_fewshot
 from napoleon.llm import LLMClient, make_client
 from napoleon.schema import Snapshot
 from napoleon.usage import Usage
@@ -26,10 +33,15 @@ class DirectAgent:
         *,
         max_retries: int = 2,
         max_tokens: int = 2048,
+        shots: int = 0,
+        demos: str | None = None,
+        cot: bool = True,
     ) -> None:
         self._client = client
         self.max_retries = max_retries
         self.max_tokens = max_tokens
+        self.cot = cot
+        self.fewshot = make_fewshot(shots, demos, cot)
         self.lessons = ""  # extra system text, set by agents that learn across games
 
     @property
@@ -43,14 +55,20 @@ class DirectAgent:
             "model": self.client.model,
             "max_retries": self.max_retries,
             "max_tokens": self.max_tokens,
+            "cot": self.cot,
+            **(self.fewshot.config() if self.fewshot else {"shots": 0}),
         }
 
     def reset(self, seed: int) -> None:
-        pass
+        if self.fewshot:
+            self.fewshot.reset(seed)
 
     def act(self, snapshot: Snapshot) -> Decision:
+        system = (SYSTEM_PROMPT if self.cot else SYSTEM_PROMPT_NO_COT) + self.lessons
+        shots = self.fewshot.messages(snapshot) if self.fewshot else []
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT + self.lessons},
+            {"role": "system", "content": system},
+            *shots,
             {"role": "user", "content": render_snapshot(snapshot)},
         ]
         usage = Usage()

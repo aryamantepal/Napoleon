@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean, median, stdev
 
+from napoleon.agents import LLM_AGENTS
 from napoleon.agents.base import Agent
 from napoleon.env import CivEnv
 from napoleon.fake import FakeCivGame
@@ -36,10 +37,12 @@ class Cell:
     agent: str
     scenario: str
     seed: int
+    shots: int = 0  # few-shot demonstrations; 0 is the zero-shot baseline
 
     @property
     def stem(self) -> str:
-        return f"{self.scenario}-seed{self.seed}"
+        # Zero-shot cells keep the old name so existing sweeps still resume.
+        return f"{self.scenario}-seed{self.seed}" + (f"-shots{self.shots}" if self.shots else "")
 
 
 @dataclass(frozen=True)
@@ -137,10 +140,19 @@ def run_sweep(
     max_steps: int = 100_000,
     resume: bool = False,
     on_done: Callable[[CellResult], None] | None = None,
+    shots: Sequence[int] = (0,),
 ) -> list[CellResult]:
-    """Play every (agent, scenario, seed) cell. ``factory`` makes a fresh agent per cell."""
+    """Play every (agent, scenario, seed, shots) cell. ``factory`` makes a fresh agent per cell.
+
+    Only LLM agents take demonstrations, so the other agents run once, zero-shot."""
     out = Path(out_dir)
-    cells = [Cell(a, sc, s) for a in agents for sc in scenarios for s in seeds]
+    cells = [
+        Cell(a, sc, s, k)
+        for a in agents
+        for k in (shots if a in LLM_AGENTS else (0,))
+        for sc in scenarios
+        for s in seeds
+    ]
 
     def one(cell: Cell) -> CellResult:
         result = run_cell(
@@ -174,11 +186,13 @@ class RunRow:
     path: Path
     metrics: RunMetrics
     reason: str | None
+    shots: int = 0  # prompting condition, from the run header
+    cot: bool = True
 
 
 def collect_runs(root: str | Path) -> list[RunRow]:
     """Every run file under ``root``. Where a cell has several episodes, only its last counts."""
-    best: dict[tuple[str, str, int], RunRow] = {}
+    best: dict[tuple, RunRow] = {}
     for path in sorted(Path(root).rglob("*.jsonl")):
         try:
             run = load_run(path)
@@ -194,11 +208,13 @@ def collect_runs(root: str | Path) -> list[RunRow]:
             path,
             metrics,
             run.footer.reason if run.footer else None,
+            int(run.header.config.get("shots") or 0),
+            bool(run.header.config.get("cot", True)),
         )
-        key = (row.agent, row.scenario, row.seed)
+        key = (row.agent, row.scenario, row.seed, row.shots, row.cot)
         if key not in best or row.episode > best[key].episode:
             best[key] = row
-    return sorted(best.values(), key=lambda r: (r.agent, r.scenario, r.seed))
+    return sorted(best.values(), key=lambda r: (r.agent, r.shots, r.cot, r.scenario, r.seed))
 
 
 def _sd(values: list[float]) -> float:
@@ -206,16 +222,18 @@ def _sd(values: list[float]) -> float:
 
 
 def summarize(rows: Sequence[RunRow]) -> list[dict]:
-    """One dict per (agent, scenario), in a stable order."""
-    groups: dict[tuple[str, str], list[RunRow]] = defaultdict(list)
+    """One dict per (agent, prompting condition, scenario), in a stable order."""
+    groups: dict[tuple, list[RunRow]] = defaultdict(list)
     for r in rows:
-        groups[(r.agent, r.scenario)].append(r)
+        groups[(r.agent, r.shots, r.cot, r.scenario)].append(r)
     out = []
-    for (agent, scenario), rs in sorted(groups.items()):
+    for (agent, shots, cot, scenario), rs in sorted(groups.items()):
         ms = [r.metrics for r in rs]
         scores = [m.final_score for m in ms]
         row = {
             "agent": agent,
+            "shots": shots,
+            "cot": cot,
             "scenario": scenario,
             "runs": len(rs),
             "score_mean": round(mean(scores), 2),
@@ -253,15 +271,16 @@ def _add_recovery(summary: list[dict], rows: Sequence[RunRow]) -> None:
     """
     by = defaultdict(list)
     for r in rows:
-        by[(r.agent, r.scenario)].append(r.metrics)
+        by[(r.agent, r.shots, r.cot, r.scenario)].append(r.metrics)
     for row in summary:
         if row["scenario"] != BAD_OPENING:
             continue
-        ref = by.get((row["agent"], REFERENCE))
+        cond = (row["agent"], row["shots"], row["cot"])
+        ref = by.get((*cond, REFERENCE))
         if not ref:
             continue
         ref_mean = mean(m.final_score for m in ref)
-        bad = by[(row["agent"], BAD_OPENING)]
+        bad = by[(*cond, BAD_OPENING)]
         row["recovery_ratio"] = (
             round(mean(m.final_score for m in bad) / ref_mean, 3) if ref_mean else None
         )
@@ -275,6 +294,8 @@ def _add_recovery(summary: list[dict], rows: Sequence[RunRow]) -> None:
 
 COLUMNS = [
     "agent",
+    "shots",
+    "cot",
     "scenario",
     "runs",
     "score_mean",
@@ -309,7 +330,8 @@ def write_csv(summary: Sequence[dict], path: str | Path) -> None:
 
 def write_runs_csv(rows: Sequence[RunRow], path: str | Path) -> None:
     cols = [
-        "agent", "scenario", "seed", "episode", "ended", "turns", "steps", "final_score",
+        "agent", "shots", "cot", "scenario", "seed", "episode", "ended", "turns", "steps",
+        "final_score",
         "cities", "population", "techs", "illegal_rate", "llm_calls", "input_tokens",
         "output_tokens", "cost_usd", "run_file",
     ]  # fmt: skip
@@ -320,7 +342,8 @@ def write_runs_csv(rows: Sequence[RunRow], path: str | Path) -> None:
             m = r.metrics
             writer.writerow(
                 [
-                    r.agent, r.scenario, r.seed, r.episode, r.reason or "cut off", m.turns_played,
+                    r.agent, r.shots, r.cot, r.scenario, r.seed, r.episode,
+                    r.reason or "cut off", m.turns_played,
                     m.steps, m.final_score, m.cities_by_turn[-1][1], m.population_by_turn[-1][1],
                     m.techs_by_turn[-1][1], round(m.illegal_action_rate, 4), m.llm_calls,
                     m.input_tokens, m.output_tokens, round(m.cost_usd, 6), str(r.path),
@@ -347,7 +370,8 @@ def _table(labels: list[str], rows: list[list]) -> list[str]:
 
 def markdown(summary: Sequence[dict]) -> str:
     main_cols = [
-        ("agent", "agent"), ("scenario", "scenario"), ("runs", "runs"),
+        ("agent", "agent"), ("shots", "shots"), ("cot", "cot"), ("scenario", "scenario"),
+        ("runs", "runs"),
         ("score_mean", "score"), ("score_sd", "sd"), ("cities", "cities"),
         ("techs", "techs"), ("illegal_rate", "illegal rate"), ("steps", "steps"),
         ("llm_calls", "model calls"), ("actions_per_turn", "actions/turn"),
@@ -362,14 +386,18 @@ def markdown(summary: Sequence[dict]) -> str:
     if rec:
         lines += ["", "## Recovery from a bad opening", ""]
         lines += _table(
-            ["agent", "bad-opening score / normal score", "caught up", "from turn"],
-            [[r["agent"], r["recovery_ratio"], r["recovered"], r["recovery_turn"]] for r in rec],
+            ["agent", "shots", "bad-opening score / normal score", "caught up", "from turn"],
+            [
+                [r["agent"], r["shots"], r["recovery_ratio"], r["recovered"], r["recovery_turn"]]
+                for r in rec
+            ],
         )
     unfinished = [r for r in summary if r["unfinished"]]
     if unfinished:
         lines += ["", "Unfinished runs (hit the step limit or were cut off):"]
         lines += [
-            f"- {r['agent']} on {r['scenario']}: {r['unfinished']} of {r['runs']}"
+            f"- {r['agent']} ({r['shots']}-shot) on {r['scenario']}: "
+            f"{r['unfinished']} of {r['runs']}"
             for r in unfinished
         ]
     return "\n".join(lines) + "\n"

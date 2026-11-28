@@ -161,7 +161,7 @@ def test_report_files(tmp_path):
         assert len(list(csv.DictReader(fh))) == 8
     md = (out / "summary.md").read_text()
     assert "## Results" in md and "## Recovery from a bad opening" in md
-    assert "| greedy | default | 2 |" in md
+    assert "| greedy | 0 | yes | default | 2 |" in md
 
 
 def test_empty_directory_reports_nothing(tmp_path):
