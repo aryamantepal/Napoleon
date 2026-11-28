@@ -77,13 +77,13 @@ def greedy_demos(
     return out
 
 
-def demos_from_run(path: str | Path) -> list[Demo]:
-    """Demonstrations from a recorded fake-game run, by replaying its actions.
+def replay_steps(path: str | Path):
+    """Yield ``(snapshot, step)`` for every step of a finished fake-game run file.
 
     Run files store a full snapshot only at the start of each turn, so the game is replayed
-    from the header's scenario and seed. The replay must reproduce every recorded snapshot
-    hash, otherwise the run is not from this game and a ``ValueError`` is raised. Rejected
-    steps and steps without a typed action are skipped.
+    from the header's scenario and seed with the recorded actions. The replay must reproduce
+    every recorded snapshot hash, otherwise the run is not from this game version and a
+    ``ValueError`` is raised.
     """
     from napoleon.env import CivEnv
     from napoleon.fake import FakeCivGame
@@ -95,22 +95,30 @@ def demos_from_run(path: str | Path) -> list[Demo]:
         raise ValueError(f"{path}: only finished fake-game runs can be replayed")
     env = CivEnv(FakeCivGame(max_turns=run.footer.final_snapshot.max_turns))
     snap = env.reset(h.scenario, h.seed)
-    out = []
     for step in run.steps:
         if snapshot_hash(snap) != step.snapshot_hash:
             raise ValueError(f"{path}: step {step.step} does not replay; wrong game version?")
-        if step.result.ok and step.action is not None:
-            out.append(
-                Demo(
-                    scenario=h.scenario,
-                    seed=h.seed,
-                    snapshot=snap,
-                    action=step.action,
-                    reasoning=step.reasoning,
-                )
-            )
+        yield snap, step
         snap, _ = env.step(step.action if step.action is not None else step.raw_action)
-    return out
+
+
+def demos_from_run(path: str | Path) -> list[Demo]:
+    """Demonstrations from a recorded fake-game run. Rejected steps and steps without a
+    typed action are skipped."""
+    from napoleon.recording import load_run
+
+    scenario, seed = (lambda h: (h.scenario, h.seed))(load_run(path).header)
+    return [
+        Demo(
+            scenario=scenario,
+            seed=seed,
+            snapshot=snap,
+            action=step.action,
+            reasoning=step.reasoning,
+        )
+        for snap, step in replay_steps(path)
+        if step.result.ok and step.action is not None
+    ]
 
 
 def save_demos(demos: list[Demo], path: str | Path) -> None:

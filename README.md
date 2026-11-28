@@ -17,6 +17,7 @@ Status: early. Everything runs on a small deterministic fake game. The civ6-mcp 
 - `continual` (`napoleon.harness`, `napoleon.refiner`, `napoleon.agents.continual`): the Continual Harness. The agent's strategy prompt, skills, memory and sub-agents are edited by the same model on a schedule while the game runs, with size caps, skill verification, a tool whitelist and rollback ([details](docs/continual-harness.md)).
 - `napoleon.fewshot` and the prompting conditions: `--shots K` gives any LLM agent K worked examples (a compact situation summary, then the action JSON with a short reason) before each prompt, `--cot/--no-cot` turns the reasoning field on or off, and both are recorded in the run header so `sweep` and `report` split results by them. Examples come from greedy play on fake-game seeds 1000 and up (or a file made by `napoleon demos`), are chosen by similarity to the current situation, and never come from the seed being played ([details](docs/prompting-conditions.md)).
 - `napoleon.rl` and the `rl` agent: policies trained on the fake game in numpy only (`pip install -e '.[rl]'`). A softmax over the legal actions scores hand features of each (snapshot, action) pair, so masking is free. `napoleon train --agent ppo` (PPO) or `--agent q` (linear Q-learning) writes a checkpoint and a learning-curve CSV, and `--agent rl --checkpoint models/ppo.npz` plays it in `run` and `sweep` ([details](docs/rl.md)).
+- `napoleon.finetune`: LoRA-tune a small local model with MLX (`pip install -e '.[mlx]'`, Apple silicon). `napoleon finetune sft` clones a teacher (greedy, or a stronger model for relabeling) from fake-game states, `dagger` rolls the student out, scores windows with a process reward, relabels the bad ones and soft-trains again, reset-free, and `eval` compares base and tuned students. The adapter is served with `mlx_lm.server` and used by any agent through `--base-url` ([details](docs/finetune.md)).
 - `napoleon.llm`: a one-method `LLMClient` protocol, an OpenAI-compatible HTTP client (Ollama, LM Studio, vLLM, llama.cpp, hosted Qwen), and a scripted client for tests. Agents ask for JSON and parse it leniently rather than rely on native tool calling.
 - `napoleon.skills`: the skill DSL, its safe interpreter, the JSON skill library with TF-IDF retrieval, and fake-game verification.
 - `napoleon.runner`: `run_game` for one game and `run_episodes` for several in a row with the same agent object, so whatever the agent keeps carries over.
@@ -45,6 +46,7 @@ napoleon run --agent direct --shots 3               # few-shot; add --no-cot to 
 napoleon sweep --agents direct --shots 0 3 --seeds 0-4   # zero-shot against 3-shot
 napoleon train --agent ppo --episodes 2500 --turns 50 --out models/ppo.npz   # a few minutes, numpy only
 napoleon run --agent rl --checkpoint models/ppo.npz --turns 50
+napoleon finetune sft --out adapters/sft --seeds 2000-2005 --turns 30 --iters 150   # MLX LoRA
 napoleon sweep --agents random greedy direct react --seeds 0-4 --turns 50 --workers 4 --out runs/sweep
 napoleon report runs/sweep                          # re-aggregate existing run files
 napoleon run --backend civ6-scripted --turns 15
