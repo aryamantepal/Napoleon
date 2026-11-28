@@ -69,7 +69,7 @@ A run on an Apple M-series laptop, student `mlx-community/Qwen3-1.7B-4bit`, no r
 |---|---|---|---|---|
 | base | 94% | 0% | 2.3 | 0 of 8 |
 | SFT, 150 iterations on 449 greedy pairs (about 13 minutes) | 0% | 0% | 9.0 (greedy's) | 8 of 8, 13 steps a game |
-| DAgger from the base, 3 rounds of 20 steps (about 20 minutes with training) | 0% | 0% | 7.0 | 0 of 8 |
+| DAgger from the base, 3 rounds of 20 steps (about 14 minutes including training) | 0% | 0% | 7.0 | 0 of 8 |
 
 SFT's validation loss went from 6.0 to 0.023, and the tuned student plays exactly greedy's moves on these seeds. That is the expected result of cloning a deterministic teacher, not evidence that it generalizes to other situations. The base model is not format-broken here (0%) but nearly every action it picks is illegal and it never ends a turn.
 
