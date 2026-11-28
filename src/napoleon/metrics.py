@@ -27,6 +27,9 @@ class RunMetrics(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
+    # Efficiency: how much acting and model use it takes to advance one game turn.
+    actions_per_turn: float = 0.0
+    calls_per_turn: float = 0.0
 
 
 def compute_metrics(run: Run) -> RunMetrics:
@@ -40,8 +43,10 @@ def compute_metrics(run: Run) -> RunMetrics:
     usage = total_usage([s.usage for s in run.steps])
     if run.footer is not None:
         usage = usage + (run.footer.overhead_usage or Usage())
+    turns_played = final.turn - snaps[0].turn
+    per_turn = max(1, turns_played)
     return RunMetrics(
-        turns_played=final.turn - snaps[0].turn,
+        turns_played=turns_played,
         steps=len(run.steps),
         failed_steps=failed,
         illegal_action_rate=failed / len(run.steps) if run.steps else 0.0,
@@ -55,6 +60,8 @@ def compute_metrics(run: Run) -> RunMetrics:
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
         cost_usd=usage.cost_usd,
+        actions_per_turn=len(run.steps) / per_turn,
+        calls_per_turn=usage.calls / per_turn,
     )
 
 

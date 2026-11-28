@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -53,6 +53,7 @@ class StepRecord(_Model):
     result: StepResult
     elapsed_ms: float = 0.0
     usage: Usage | None = None
+    agent_events: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RunFooter(_Model):
@@ -88,6 +89,7 @@ class Recorder:
         reasoning: str | None = None,
         elapsed_ms: float = 0.0,
         usage: Usage | None = None,
+        agent_events: Sequence[dict[str, Any]] = (),
     ) -> StepRecord:
         """Record one step. ``seen`` is the snapshot the agent acted on."""
         full = seen if seen.turn != self._last_turn else None
@@ -104,6 +106,7 @@ class Recorder:
             result=result,
             elapsed_ms=elapsed_ms,
             usage=usage,
+            agent_events=list(agent_events),
         )
         self._write(rec)
         self._step += 1

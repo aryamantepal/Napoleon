@@ -40,6 +40,34 @@ def _add_llm_options(parser: argparse.ArgumentParser) -> None:
     llm.add_argument("--base", choices=["direct", "react"], default=None, help="reflexion: player")
     llm.add_argument("--max-reflections", type=int, default=None, help="reflexion: lessons shown")
     llm.add_argument("--no-verify", action="store_true", help="voyager: store skills untested")
+    cont = parser.add_argument_group("continual harness", "for --agent continual")
+    cont.add_argument(
+        "--bootstrap-from",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="start from a saved harness (a .harness directory); frozen unless --bootstrap-update",
+    )
+    cont.add_argument("--bootstrap-update", action="store_true", help="keep refining it")
+    cont.add_argument("--refine-warmup", type=int, default=None, help="first refinement (25)")
+    cont.add_argument("--refine-every", type=int, default=None, help="steps between them (25)")
+    cont.add_argument("--refine-until", type=int, default=None, help="go slow after step (200)")
+    cont.add_argument("--refine-late-every", type=int, default=None, help="late interval (100)")
+    cont.add_argument("--max-prompt-chars", type=int, default=None, help="strategy cap (4000)")
+    cont.add_argument("--max-tool-calls", type=int, default=None, help="tool calls per step (4)")
+    cont.add_argument("--no-rollback", action="store_true", help="never roll back a refinement")
+    cont.add_argument(
+        "--rollback-illegal-delta",
+        type=float,
+        default=None,
+        help="roll back if the illegal-action rate rises by this much (0.15)",
+    )
+    cont.add_argument(
+        "--rollback-score-margin",
+        type=float,
+        default=None,
+        help="roll back if score gain per turn falls by this fraction (0.5)",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -259,8 +287,33 @@ def build_client(args: argparse.Namespace):
     )
 
 
+def _continual_options(args: argparse.Namespace) -> dict:
+    from napoleon.harness import Limits
+    from napoleon.refiner import RollbackPolicy, Schedule
+
+    def given(**kw):
+        return {k: v for k, v in kw.items() if v is not None}
+
+    sched = given(
+        warmup=args.refine_warmup,
+        interval=args.refine_every,
+        until=args.refine_until,
+        late_interval=args.refine_late_every,
+    )
+    roll = given(illegal_delta=args.rollback_illegal_delta, score_margin=args.rollback_score_margin)
+    return {
+        "schedule": Schedule(**sched),
+        "rollback": RollbackPolicy(enabled=not args.no_rollback, **roll),
+        "limits": Limits(**given(max_prompt_chars=args.max_prompt_chars)),
+        "bootstrap_from": args.bootstrap_from,
+        "bootstrap_update": args.bootstrap_update,
+        "max_tool_calls": args.max_tool_calls,
+    }
+
+
 def _agent_options(args: argparse.Namespace) -> dict:
     return {
+        **_continual_options(args),
         "max_retries": args.max_retries,
         "max_tokens": args.max_tokens,
         "max_inner_steps": args.max_inner_steps,
