@@ -53,6 +53,11 @@ def _add_llm_options(parser: argparse.ArgumentParser) -> None:
         help="few-shot demonstrations (JSONL from `napoleon demos`); default: greedy play "
         "on fake-game seeds 1000+",
     )
+    llm.add_argument(
+        "--turn-log",
+        action="store_true",
+        help="direct, voyager: show the agent the actions it chose so far this turn",
+    )
     llm.add_argument("--json-mode", action="store_true", help="send response_format=json_object")
     llm.add_argument("--price-in", type=float, default=0.0, help="USD per million input tokens")
     llm.add_argument("--price-out", type=float, default=0.0, help="USD per million output tokens")
@@ -479,6 +484,7 @@ def _agent_options(args: argparse.Namespace) -> dict:
         "max_retries": args.max_retries,
         "max_tokens": args.max_tokens,
         "cot": args.cot,
+        "turn_log": args.turn_log or None,
         "demos": args.demos,
         "shots": args.shots if isinstance(args.shots, int) else None,
         "max_inner_steps": args.max_inner_steps,

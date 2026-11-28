@@ -171,6 +171,39 @@ def render_snapshot(
     return "\n".join(lines)
 
 
+class TurnLog:
+    """The actions an agent has chosen so far this turn, for agents without memory.
+
+    A stateless agent cannot tell that it already set research this turn, and will flip
+    between two legal choices forever. Showing it its own moves since the turn began is
+    the least memory that breaks that loop; it is off by default so the pure stateless
+    baseline stays available.
+    """
+
+    def __init__(self, limit: int = 20) -> None:
+        self.limit = limit
+        self.turn: int | None = None
+        self.actions: list[str] = []
+
+    def reset(self) -> None:
+        self.turn, self.actions = None, []
+
+    def note(self, snap: Snapshot, action: object) -> None:
+        if snap.turn != self.turn:
+            self.turn, self.actions = snap.turn, []
+        text = action_json(action) if isinstance(action, BaseModel) else str(action)[:200]
+        self.actions.append(text)
+
+    def render(self, snap: Snapshot) -> str:
+        if snap.turn != self.turn or not self.actions:
+            return "\n\nYour actions so far this turn: none."
+        shown = self.actions[-self.limit :]
+        more = len(self.actions) - len(shown)
+        head = f"\n\nYour actions so far this turn ({len(self.actions)}"
+        head += f", last {len(shown)} shown):" if more else "):"
+        return head + "\n" + "\n".join(f"- {a}" for a in shown)
+
+
 def direct_messages(snap: Snapshot, cot: bool = True, lessons: str = "") -> list[dict[str, str]]:
     """The exact system and user messages the direct agent sends for ``snap``."""
     system = (SYSTEM_PROMPT if cot else SYSTEM_PROMPT_NO_COT) + lessons

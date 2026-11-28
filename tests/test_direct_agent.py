@@ -3,7 +3,7 @@ import json
 import pytest
 from stubs import PickLegal, chat_server, legal_lines, pick_legal
 
-from napoleon.agents import AGENTS, LLM_AGENTS, DirectAgent
+from napoleon.agents import AGENTS, LLM_AGENTS, DirectAgent, GreedyAgent
 from napoleon.agents.prompting import parse_reply, render_snapshot
 from napoleon.cli import main
 from napoleon.env import CivEnv
@@ -218,3 +218,30 @@ def test_every_action_type_is_described_in_the_rules():
         "end_turn",
     ):
         assert f'{{"type":"{name}"' in GAME_RULES
+
+
+def test_turn_log_shows_this_turns_moves_and_clears_on_a_new_turn():
+    env = CivEnv(FakeCivGame(max_turns=20))
+    snap = env.reset(seed=0)
+    client = ScriptedClient(pick_legal)
+    agent = DirectAgent(client, turn_log=True)
+    agent.reset(0)
+    first = agent.act(snap)
+    assert "Your actions so far this turn: none." in client.calls[0][-1]["content"]
+    snap, _ = env.step(first.action)
+    agent.act(snap)
+    assert first.action.model_dump_json(exclude_none=True)[:20] in client.calls[1][-1]["content"]
+    greedy = GreedyAgent()
+    while snap.turn == 1:
+        snap, _ = env.step(greedy.act(snap).action)
+    agent.act(snap)
+    assert "Your actions so far this turn: none." in client.calls[-1][-1]["content"]
+    assert agent.config()["turn_log"] is True
+
+
+def test_turn_log_is_off_by_default():
+    client = ScriptedClient(pick_legal)
+    agent = DirectAgent(client)
+    agent.act(_fresh())
+    assert "so far this turn" not in client.calls[0][-1]["content"]
+    assert agent.config()["turn_log"] is False

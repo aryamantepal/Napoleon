@@ -18,6 +18,7 @@ from napoleon.agents.base import Decision
 from napoleon.agents.prompting import (
     GAME_RULES,
     NO_COT_NOTE,
+    TurnLog,
     parse_reply,
     render_snapshot,
     retry_note,
@@ -131,9 +132,11 @@ class VoyagerAgent:
         shots: int = 0,
         demos: str | None = None,
         cot: bool = True,
+        turn_log: bool = False,
     ) -> None:
         self._client = client
         self.cot = cot
+        self.turn_log = TurnLog() if turn_log else None
         self.fewshot = make_fewshot(shots, demos, cot)
         self.library = SkillLibrary(skills_path, max_skills=max_skills)
         self.max_retries = max_retries
@@ -161,6 +164,7 @@ class VoyagerAgent:
             "skills_loaded": self.loaded,
             "verify": self.verify,
             "cot": self.cot,
+            "turn_log": self.turn_log is not None,
             **(self.fewshot.config() if self.fewshot else {"shots": 0}),
         }
 
@@ -168,12 +172,20 @@ class VoyagerAgent:
         self.active = None
         self.created = self.reused = self.free_steps = 0
         self.loaded = len(self.library)
+        if self.turn_log:
+            self.turn_log.reset()
         if self.fewshot:
             self.fewshot.reset(seed)
 
     # Deciding -----------------------------------------------------------------------
 
     def act(self, snapshot: Snapshot) -> Decision:
+        decision = self._decide(snapshot)
+        if self.turn_log:
+            self.turn_log.note(snapshot, decision.action)
+        return decision
+
+    def _decide(self, snapshot: Snapshot) -> Decision:
         if self.active is not None:
             name, run = self.active
             action = run.next_action(snapshot)
@@ -215,6 +227,8 @@ class VoyagerAgent:
             text += "\nOther skills you can call by name: " + ", ".join(others)
         if not self.library.skills:
             text += "\n\nYour skill library is empty."
+        if self.turn_log:
+            text += self.turn_log.render(snap)
         return text
 
     def _interpret(self, text: str, snap: Snapshot) -> _Chosen | _Rejected:
